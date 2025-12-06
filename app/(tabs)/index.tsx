@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 const { width, height } = Dimensions.get('window');
 
@@ -96,6 +97,7 @@ export default function RetroPagerUI() {
             </LinearGradient>
             </View>
         </View>
+
 
         {/* Zona de Mijloc - Decorativă (ca să umple spațiul lung) */}
         <View style={styles.middleDeco}>
