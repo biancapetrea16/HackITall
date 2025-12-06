@@ -1,23 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, Dimensions } from 'react-native';
 import { useFonts, VT323_400Regular } from '@expo-google-fonts/vt323';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
+import { Dimensions, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
-// --- BAZA DE DATE LOCALĂ ---
-const INITIAL_MESSAGES = [
-  "READY...",
-  "LOVE 123",
-  "911 URGENT",
-  "MEET @ 8",
-  "BUY PIZZA",
-];
+import pagerMessages from './data';
 
 export default function RetroPagerUI() {
   let [fontsLoaded] = useFonts({ VT323_400Regular });
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState(pagerMessages);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showCursor, setShowCursor] = useState(true);
   const [isSending, setIsSending] = useState(false);
