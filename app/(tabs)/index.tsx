@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
 import { useFonts, VT323_400Regular } from '@expo-google-fonts/vt323';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 
+// Importăm logica
 import { usePagerLogic } from '../../hooks/usePagerLogic'; 
 
 const { width, height } = Dimensions.get('window');
 
-// --- 1. DEFINIREA TEMELOR ---
+// --- 1. DEFINIREA TEMELOR (Asta lipsea!) ---
 const THEMES = {
   DARK: { 
     body: '#222222', bezel: '#111111', screen: '#364736', textGhost: 'rgba(57, 255, 20, 0.1)',
@@ -28,15 +30,22 @@ const THEMES = {
 
 export default function RetroPagerUI() {
   let [fontsLoaded] = useFonts({ VT323_400Regular });
-  
-  // State pentru Tema curentă (Default: NULL ca să arate Intro)
-  const [currentTheme, setCurrentTheme] = useState(null);
-  
-  const { displayText, showCursor, handleButtonPress, currentIndex, totalMessages, mode } = usePagerLogic();
+
+  // 2. Extragem datele + TEMA CURENTĂ din logică
+  const { 
+    displayText, 
+    showCursor, 
+    handleButtonPress, 
+    currentIndex, 
+    totalMessages, 
+    mode,
+    currentTheme,    // <-- Asta ne trebuie
+    setCurrentTheme  // <-- Si asta
+  } = usePagerLogic();
 
   if (!fontsLoaded) return <View style={styles.loading}><Text>Loading...</Text></View>;
 
-  // --- ECRANUL 1: SELECTEAZĂ TEMA (INTRO) ---
+  // --- ECRANUL 1: INTRO (Dacă nu e selectată nicio temă) ---
   if (!currentTheme) {
       return (
           <View style={styles.introContainer}>
@@ -44,58 +53,48 @@ export default function RetroPagerUI() {
               <Text style={styles.introTitle}>NEOPAGER OS</Text>
               <Text style={styles.introSubtitle}>SELECT YOUR VIBE</Text>
 
-              {/* Buton RETRO */}
               <TouchableOpacity onPress={() => setCurrentTheme('DARK')} style={[styles.introBtn, {borderColor: '#39ff14'}]}>
                   <Text style={[styles.introBtnText, {color: '#39ff14'}]}>MATRIX RETRO</Text>
-                  <Text style={{color:'#666', fontSize: 10}}>Classic 90s Style</Text>
               </TouchableOpacity>
 
-              {/* Buton Y2K */}
               <TouchableOpacity onPress={() => setCurrentTheme('FUNKY')} style={[styles.introBtn, {borderColor: '#FF007F'}]}>
                   <Text style={[styles.introBtnText, {color: '#FF007F'}]}>Y2K POP</Text>
-                  <Text style={{color:'#666', fontSize: 10}}>Cartoon & Funky</Text>
               </TouchableOpacity>
 
-              {/* Buton LIGHT */}
               <TouchableOpacity onPress={() => setCurrentTheme('LIGHT')} style={[styles.introBtn, {borderColor: '#fff'}]}>
                   <Text style={[styles.introBtnText, {color: '#fff'}]}>CLEAN OS</Text>
-                  <Text style={{color:'#666', fontSize: 10}}>Minimalist</Text>
               </TouchableOpacity>
           </View>
       );
   }
 
-  // --- ECRANUL 2: PAGERUL PROPRIU-ZIS ---
-  const theme = THEMES[currentTheme];
+  // --- ECRANUL 2: PAGERUL ---
+  // Aici definim variabila 'theme' pe care o căuta codul tău
+  const theme = THEMES[currentTheme]; 
   const isTransmitting = displayText === 'SENDING...';
   const isContactMode = mode === 'CONTACTS';
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <StatusBar hidden={true} />
+      <StatusBar hidden={true} style="light" />
 
-      {/* Buton "Back to Themes" */}
+      {/* Buton Back to Themes */}
       <TouchableOpacity onPress={() => setCurrentTheme(null)} style={styles.backBtn}>
-          <Text style={{color: theme.branding, fontSize: 10}}>CHANGE THEME</Text>
+          <Text style={{color: theme.branding, fontSize: 10, fontWeight:'bold'}}>CHANGE THEME</Text>
       </TouchableOpacity>
 
-      {/* --- CARCASA DINAMICĂ --- */}
       <View style={[styles.pagerBody, { backgroundColor: theme.body, borderColor: theme.body === '#222222' ? '#333' : theme.bezel }]}>
         
-        {/* Partea de Sus */}
+        {/* Top Section */}
         <View style={styles.topSection}>
             <View style={styles.brandingRow}>
-              
-              {/* Logo Motorola */}
               <View>
                 <Text style={[styles.brandText, {color: theme.branding}]}>MOTOROLA</Text>
                 <Text style={styles.modelText}>ADVISOR {currentTheme}</Text>
               </View>
 
-              {/* Grup Dreapta: AI Button + LED */}
+              {/* Grup Dreapta: AI + LED */}
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
-                  
-                  {/* --- 🤖 BUTONUL AI (RESTAURAT) --- */}
                   <TouchableOpacity 
                      style={styles.aiButton}
                      onPress={() => alert("AI Magic: Voi scrie mesajul pentru tine!")}
@@ -104,15 +103,15 @@ export default function RetroPagerUI() {
                      <Text style={styles.aiButtonText}>AI ✨</Text>
                   </TouchableOpacity>
 
-                  {/* LED */}
                   <View style={[styles.ledLight, { backgroundColor: isTransmitting ? '#ff3333' : '#330000', borderColor: theme.branding }]}>
                      {isTransmitting && <View style={styles.ledGlow} />}
                   </View>
               </View>
-
             </View>
 
+            {/* Ecran */}
             <View style={[styles.screenBezel, { backgroundColor: theme.bezel }]}>
+                {/* Folosim LinearGradient doar daca e tema Dark pt reflexii, altfel culoare plata */}
                 <View style={[styles.lcdScreen, { backgroundColor: theme.screen, borderColor: theme.branding }]}>
                     <View style={styles.textContainer}>
                       <Text style={[styles.pixelText, { color: theme.textGhost }]}>8888888888888888888</Text>
@@ -142,31 +141,32 @@ export default function RetroPagerUI() {
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
         </View>
 
+        {/* Controale */}
         <View style={styles.controlsArea}>
-          <TouchableOpacity style={[styles.bigButton, {backgroundColor: theme.button}]} onPress={() => handleButtonPress('MODE')} activeOpacity={0.6}>
+          <TouchableOpacity style={[styles.bigButton, {backgroundColor: theme.button}]} onPress={() => handleButtonPress('MODE')}>
             <View style={styles.buttonInset} /><Text style={styles.btnLabel}>MODE</Text>
           </TouchableOpacity>
           
           <View style={styles.arrowsContainer}>
-            <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('UP')} activeOpacity={0.6}>
+            <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('UP')}>
                 <Text style={styles.arrowText}>▲</Text>
             </TouchableOpacity>
             <View style={styles.horizontalArrows}>
-              <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('LEFT')} activeOpacity={0.6}>
+              <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('LEFT')}>
                 <Text style={styles.arrowText}>◀</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('RIGHT')} activeOpacity={0.6}>
+              <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('RIGHT')}>
                 <Text style={styles.arrowText}>▶</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('DOWN')} activeOpacity={0.6}>
+            <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows}]} onPress={() => handleButtonPress('DOWN')}>
                 <Text style={styles.arrowText}>▼</Text>
             </TouchableOpacity>
           </View>
           
           <TouchableOpacity 
             style={[styles.bigButton, { backgroundColor: isContactMode ? theme.buttonAction : (currentTheme === 'FUNKY' ? '#FF007F' : '#8B0000') }]} 
-            onPress={() => handleButtonPress('SEND')} activeOpacity={0.6}>
+            onPress={() => handleButtonPress('SEND')}>
             <View style={styles.buttonInset} /><Text style={styles.btnLabel}>{isContactMode ? 'OK' : 'SEND'}</Text>
           </TouchableOpacity>
         </View>
@@ -185,26 +185,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'black' },
   
-  // INTRO SCREEN
   introContainer: { flex: 1, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', width: '100%' },
   introTitle: { fontFamily: 'VT323_400Regular', color: '#fff', fontSize: 50, marginBottom: 10, textShadowColor: '#39ff14', textShadowRadius: 10 },
   introSubtitle: { color: '#888', marginBottom: 40, letterSpacing: 5, fontSize: 12 },
   introBtn: { width: 250, padding: 20, marginBottom: 15, borderRadius: 10, borderWidth: 2, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)' },
   introBtnText: { fontFamily: 'VT323_400Regular', fontSize: 30 },
 
-  backBtn: { position: 'absolute', top: 50, padding: 10 },
+  backBtn: { position: 'absolute', top: 50, padding: 10, zIndex: 10 },
 
-  // PAGER BODY
   pagerBody: { width: width * 0.90, height: height * 0.70, borderRadius: 30, padding: 25, justifyContent: 'space-between', borderTopWidth: 3, borderLeftWidth: 3, borderRightWidth: 5, borderBottomWidth: 7, shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 15, elevation: 20 },
   topSection: {},
   brandingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingHorizontal: 5 },
   brandText: { fontWeight: 'bold', fontSize: 14, fontStyle: 'italic' },
   modelText: { color: '#C0A062', fontWeight: 'bold', fontSize: 14 }, 
   
-  // STILURI BUTON AI
-  aiButton: {
-      backgroundColor: '#FFD700', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 20, borderWidth: 2, borderColor: '#DAA520', shadowColor: "yellow", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.6, shadowRadius: 4, elevation: 5,
-  },
+  aiButton: { backgroundColor: '#FFD700', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 20, borderWidth: 2, borderColor: '#DAA520', shadowColor: "yellow", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.6, shadowRadius: 4, elevation: 5 },
   aiButtonText: { color: '#000', fontWeight: 'bold', fontSize: 10 },
 
   ledLight: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
