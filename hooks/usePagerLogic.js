@@ -1,47 +1,66 @@
 import { useState, useEffect } from 'react';
 import * as Haptics from 'expo-haptics';
-import * as Contacts from 'expo-contacts'; // 1. IMPORTĂM CONTACTE
-import pagerMessages from '../app/(tabs)/data'; 
+import * as Notifications from 'expo-notifications';
+import * as Contacts from 'expo-contacts';
+import pagerMessages from '../app/(tabs)/data'; // Asigură-te că data.js există în app/(tabs)/
+
+// Configurare Notificări
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export function usePagerLogic() {
-  const [messages, setMessages] = useState(pagerMessages);
-  // Pornim cu o listă goală sau cu un mesaj de așteptare
+  const [messages, setMessages] = useState(pagerMessages || ["WELCOME"]);
   const [contacts, setContacts] = useState(["LOADING..."]);
+  const [myToken, setMyToken] = useState("");
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showCursor, setShowCursor] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [mode, setMode] = useState('READ'); 
 
-  // --- NOU: ÎNCĂRCAREA CONTACTELOR REALE ---
+  // 1. SETUP: Contacte și Notificări
   useEffect(() => {
     (async () => {
-      // A. Cerem Permisiune
-      const { status } = await Contacts.requestPermissionsAsync();
-      
-      if (status === 'granted') {
-        // B. Dacă ne lasă, tragem contactele
-        const { data } = await Contacts.getContactsAsync({
-          fields: [Contacts.Fields.Name], // Ne interesează doar numele
-        });
-
+      // Permisiuni Contacte
+      const { status: contactStatus } = await Contacts.requestPermissionsAsync();
+      if (contactStatus === 'granted') {
+        const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Name] });
         if (data.length > 0) {
-          // C. Le formatăm pentru Pager (Doar nume, Majuscule, max 20 caractere)
-          const formattedContacts = data
-            .map(c => c.name ? c.name.toUpperCase().slice(0, 15) : "UNKNOWN")
-            .filter(name => name !== "UNKNOWN"); // Eliminăm contacte fără nume
-          
-          setContacts(formattedContacts);
+           const cleanContacts = data
+             .map(c => c.name ? c.name.toUpperCase().slice(0, 15) : "")
+             .filter(Boolean);
+           setContacts(cleanContacts);
         } else {
-          setContacts(["NO CONTACTS"]);
+           setContacts(["NO CONTACTS"]);
         }
-      } else {
-        setContacts(["NO PERMISSION"]);
+      }
+
+      // Permisiuni Notificări
+      const { status: notifStatus } = await Notifications.requestPermissionsAsync();
+      if (notifStatus === 'granted') {
+        const tokenData = await Notifications.getExpoPushTokenAsync();
+        console.log("MY TOKEN:", tokenData.data);
+        setMyToken(tokenData.data);
       }
     })();
+
+    // Ascultător Notificări
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+       const text = notification.request.content.body;
+       setMessages(prev => [...prev, text.toUpperCase()]);
+       setCurrentIndex(prev => prev + 1);
+       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    });
+
+    return () => subscription.remove();
   }, []);
 
-  // --- RESTUL LOGICII RĂMÂNE LA FEL ---
+  // Cursor effect
   useEffect(() => {
     const interval = setInterval(() => setShowCursor((prev) => !prev), 500);
     return () => clearInterval(interval);
@@ -53,7 +72,7 @@ export function usePagerLogic() {
 
     switch (label) {
       case 'MODE':
-        setMode((prevMode) => prevMode === 'READ' ? 'CONTACTS' : 'READ');
+        setMode((prev) => prev === 'READ' ? 'CONTACTS' : 'READ');
         setCurrentIndex(0);
         break;
 
@@ -68,20 +87,19 @@ export function usePagerLogic() {
 
       case 'SEND':
         setIsSending(true);
+        // Simulare trimitere (Aici Membru 2 va pune fetch-ul real către server)
         setTimeout(() => {
           setIsSending(false);
-          
           if (mode === 'CONTACTS') {
+              const target = contacts[currentIndex];
               setMode('READ');
-              // Aici luăm numele contactului real
-              setMessages([...messages, "SENT TO " + contacts[currentIndex]]);
-              setCurrentIndex(messages.length); 
+              setMessages(prev => [...prev, "SENT TO " + target]);
+              setCurrentIndex(prev => prev.length); 
           } else {
-              const newCode = "SENT OK " + Math.floor(Math.random() * 100); 
-              setMessages([...messages, newCode]); 
-              setCurrentIndex(messages.length); 
+              setMessages(prev => [...prev, "SENT OK " + Math.floor(Math.random()*100)]);
+              setCurrentIndex(prev => prev.length);
           }
-        }, 2000);
+        }, 1500);
         break;
         
       default:
@@ -89,23 +107,19 @@ export function usePagerLogic() {
     }
   };
 
+  // Logică de afișare text
   let displayText;
-  if (isSending) {
-    displayText = "SENDING...";
-  } else if (mode === 'CONTACTS') {
-    displayText = contacts[currentIndex]; 
-  } else {
-    displayText = messages[currentIndex];
-  }
-
-  const totalItems = mode === 'READ' ? messages.length : contacts.length;
+  if (isSending) displayText = "SENDING...";
+  else if (mode === 'CONTACTS') displayText = contacts[currentIndex] || "NO CONTACTS";
+  else displayText = messages[currentIndex] || "NO MSGS";
 
   return {
     displayText,
     showCursor,
     handleButtonPress,
     currentIndex,
-    totalMessages: totalItems,
-    mode
+    totalMessages: mode === 'READ' ? messages.length : contacts.length,
+    mode,
+    myToken
   };
 }
