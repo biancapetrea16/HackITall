@@ -1,34 +1,31 @@
 import { useState, useEffect } from 'react';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 import * as Contacts from 'expo-contacts';
-import pagerMessages from '../app/(tabs)/data'; // Asigură-te că data.js există în app/(tabs)/
+import pagerMessages from '../app/(tabs)/data'; 
 
-// Configurare Notificări
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// ⚠️ SCHIMBĂ AICI CU NUMELE TĂU (BIANCA sau ALEX)
+const MY_ID = "BIANCA"; 
+
+// ⚠️ SCHIMBĂ AICI CU LINK-UL DE NGROK (Fără slash la final)
+const SERVER_URL = "https://LINKUL-TAU-DE-LA-MEMBRU-3.ngrok-free.app"; 
 
 export function usePagerLogic() {
   const [messages, setMessages] = useState(pagerMessages || ["WELCOME"]);
   const [contacts, setContacts] = useState(["LOADING..."]);
-  const [myToken, setMyToken] = useState("");
+  
+  // 1. AICI ERA LIPSA: State-ul pentru Temă!
+  const [currentTheme, setCurrentTheme] = useState(null); 
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showCursor, setShowCursor] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [mode, setMode] = useState('READ'); 
 
-  // 1. SETUP: Contacte și Notificări
+  // 2. SETUP CONTACTS
   useEffect(() => {
     (async () => {
-      // Permisiuni Contacte
-      const { status: contactStatus } = await Contacts.requestPermissionsAsync();
-      if (contactStatus === 'granted') {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status === 'granted') {
         const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Name] });
         if (data.length > 0) {
            const cleanContacts = data
@@ -39,28 +36,38 @@ export function usePagerLogic() {
            setContacts(["NO CONTACTS"]);
         }
       }
-
-      // Permisiuni Notificări
-      const { status: notifStatus } = await Notifications.requestPermissionsAsync();
-      if (notifStatus === 'granted') {
-        const tokenData = await Notifications.getExpoPushTokenAsync();
-        console.log("MY TOKEN:", tokenData.data);
-        setMyToken(tokenData.data);
-      }
     })();
-
-    // Ascultător Notificări
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-       const text = notification.request.content.body;
-       setMessages(prev => [...prev, text.toUpperCase()]);
-       setCurrentIndex(prev => prev + 1);
-       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    });
-
-    return () => subscription.remove();
   }, []);
 
-  // Cursor effect
+  // 3. POLLING (Mesaje de la server)
+  useEffect(() => {
+    const checkInbox = async () => {
+        if (!SERVER_URL.includes("ngrok")) return; // Nu face request dacă nu e setat linkul
+        try {
+            const response = await fetch(`${SERVER_URL}/check`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ me: MY_ID })
+            });
+            const data = await response.json();
+
+            if (data.has_messages) {
+                data.messages.forEach(msg => {
+                    setMessages(prev => [...prev, msg]);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                });
+                setCurrentIndex(prev => prev + 1);
+            }
+        } catch (e) {
+            // Silent error
+        }
+    };
+
+    const intervalId = setInterval(checkInbox, 3000); 
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // 4. Cursor Effect
   useEffect(() => {
     const interval = setInterval(() => setShowCursor((prev) => !prev), 500);
     return () => clearInterval(interval);
@@ -75,39 +82,55 @@ export function usePagerLogic() {
         setMode((prev) => prev === 'READ' ? 'CONTACTS' : 'READ');
         setCurrentIndex(0);
         break;
-
       case 'UP':
         setCurrentIndex((prev) => (prev > 0 ? prev - 1 : 0));
         break;
-
       case 'DOWN':
         const currentList = mode === 'READ' ? messages : contacts;
         setCurrentIndex((prev) => (prev < currentList.length - 1 ? prev + 1 : prev));
         break;
-
       case 'SEND':
         setIsSending(true);
-        // Simulare trimitere (Aici Membru 2 va pune fetch-ul real către server)
-        setTimeout(() => {
-          setIsSending(false);
-          if (mode === 'CONTACTS') {
-              const target = contacts[currentIndex];
-              setMode('READ');
-              setMessages(prev => [...prev, "SENT TO " + target]);
-              setCurrentIndex(prev => prev.length); 
-          } else {
-              setMessages(prev => [...prev, "SENT OK " + Math.floor(Math.random()*100)]);
-              setCurrentIndex(prev => prev.length);
-          }
-        }, 1500);
-        break;
         
+        if (mode === 'CONTACTS') {
+            const target = contacts[currentIndex];
+            
+            // Trimitem la server
+            fetch(`${SERVER_URL}/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: target,
+                    text: "PAGER MSG FROM " + MY_ID 
+                })
+            })
+            .then(res => res.json())
+            .then(() => {
+                setIsSending(false);
+                setMode('READ');
+                setMessages(prev => [...prev, "SENT TO " + target]);
+                setCurrentIndex(prev => prev.length); 
+            })
+            .catch(() => {
+                setIsSending(false);
+                setMode('READ');
+                setMessages(prev => [...prev, "ERROR SENDING"]); // Fallback dacă nu merge serverul
+            });
+
+        } else {
+            // Fake send (dacă nu ești în contacte)
+            setTimeout(() => {
+                setIsSending(false);
+                setMessages(prev => [...prev, "SENT OK"]);
+                setCurrentIndex(prev => prev.length);
+            }, 1000);
+        }
+        break;
       default:
         console.log("Pressed:", label);
     }
   };
 
-  // Logică de afișare text
   let displayText;
   if (isSending) displayText = "SENDING...";
   else if (mode === 'CONTACTS') displayText = contacts[currentIndex] || "NO CONTACTS";
@@ -120,6 +143,10 @@ export function usePagerLogic() {
     currentIndex,
     totalMessages: mode === 'READ' ? messages.length : contacts.length,
     mode,
-    myToken
+    myToken: MY_ID,
+    
+    // 👇 AICI TREBUIAU EXPORTATE!
+    currentTheme,
+    setCurrentTheme
   };
 }
