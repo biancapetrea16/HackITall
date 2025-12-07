@@ -47,7 +47,7 @@ const THEMES = {
   },
   LIGHT: { 
     body: '#FFFFFF', bodyBorder: '#000000', bezel: '#DDDDDD', screen: '#F0F0F0', 
-    textGhost: 'rgba(0,0,0,0.3)', textReal: '#000000', // Am crescut opacitatea la 0.3
+    textGhost: 'rgba(0,0,0,0.3)', textReal: '#000000',
     button: '#FFFFFF', buttonBorder: '#000', buttonAction: '#000', 
     arrows: '#FFFFFF', branding: '#000000',
     bgColors: ['#E0E0E0', '#FFFFFF'], neonColor: '#000000', titleColor: '#555555'
@@ -69,7 +69,6 @@ export default function RetroPagerUI() {
     currentGroupMembers, groupMemberViewIndex,
     isLogged, loginUser,
     visibleGroupOptions,
-    // 🚨 MODIFICAT: Extragem funcția de decriptare AI și textul decriptat
     handleAIDecrypt,
     decryptedText
   } = usePagerLogic();
@@ -85,7 +84,7 @@ export default function RetroPagerUI() {
 
   if (!fontsLoaded) return <View style={styles.loading}><Text>Loading...</Text></View>;
 
-  // --- ECRAN INTRO ---
+  // ecran intro
   if (!currentTheme) {
       return (
           <View style={styles.mainContainer}>
@@ -97,21 +96,21 @@ export default function RetroPagerUI() {
                 ))}
               </View>
               <View style={styles.introContent}>
-                  <Text style={[styles.introTitle, { opacity: blink ? 1 : 0.8, textShadowColor: '#bd00ff' }]}>NEOPAGER_OS</Text>
-                  <Text style={[styles.introSubtitle, {color: '#E0B0FF'}]}>SELECT INTERFACE PROTOCOL:_</Text>
+                  <Text style={[styles.introTitle, { opacity: blink ? 1 : 0.8, textShadowColor: '#bd00ff' }]}>PAGER_OS</Text>
+                  <Text style={[styles.introSubtitle, {color: '#E0B0FF'}]}>SELECT THEME:_</Text>
                   
                   <View style={styles.introButtonList}>
                        <TouchableOpacity onPress={() => setCurrentTheme('CLASSIC')} style={[styles.terminalBtn, {borderColor: '#39ff14'}]}>
-                          <Text style={[styles.terminalBtnText, {color: '#39ff14'}]}>[1] CLASSIC</Text>
+                          <Text style={[styles.terminalBtnText, {color: '#39ff14'}]}>CLASSIC</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => setCurrentTheme('DARK')} style={[styles.terminalBtn, {borderColor: '#00FFFF'}]}>
-                          <Text style={[styles.terminalBtnText, {color: '#00FFFF'}]}>[2] DARK</Text>
+                          <Text style={[styles.terminalBtnText, {color: '#00FFFF'}]}>DARK</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => setCurrentTheme('FUNKY')} style={[styles.terminalBtn, {borderColor: '#FF007F'}]}>
-                          <Text style={[styles.terminalBtnText, {color: '#FF007F'}]}>[3] FUNKY</Text>
+                          <Text style={[styles.terminalBtnText, {color: '#FF007F'}]}>FUNKY</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => setCurrentTheme('LIGHT')} style={[styles.terminalBtn, {borderColor: '#FFF', backgroundColor: '#333'}]}>
-                          <Text style={[styles.terminalBtnText, {color: '#FFF'}]}>[4] LIGHT</Text>
+                          <Text style={[styles.terminalBtnText, {color: '#FFF'}]}>LIGHT</Text>
                       </TouchableOpacity>
                   </View>
               </View>
@@ -133,7 +132,7 @@ export default function RetroPagerUI() {
   const isSelectionMode = mode === 'CONTACTS' || mode === 'GROUPS';
   const isFeedbackMode = totalMessages === -1; 
 
-  // --- ECRAN LOGIN (FIX IOS) ---
+  // ecran login
   if (!isLogged) {
       return (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -186,7 +185,7 @@ export default function RetroPagerUI() {
       )
   }
 
-  // --- ECRAN PAGER NORMAL ---
+  // ecran pager normal
   let currentList = [];
   let currentSelectionIndex = 0;
   let headerText = '';
@@ -216,7 +215,7 @@ export default function RetroPagerUI() {
       currentSelectionIndex = groupMemberViewIndex;
       headerText = 'MEMBERS LIST';
   }
-  // 🔥 Header special pentru Group Mgmt
+  // header pt group
   if (isGroupMgmtMode) {
       headerText = 'GROUP MGMT';
   }
@@ -232,7 +231,7 @@ export default function RetroPagerUI() {
         {[...Array(12)].map((_, i) => (<View key={i} style={[styles.neonLine, { top: i * 70 + 20, backgroundColor: theme.neonColor, opacity: 0.2, shadowColor: theme.neonColor }]} />))}
       </View>
 
-      <Text style={[styles.bgMainTitle, { color: theme.titleColor, textShadowColor: theme.neonColor, opacity: flickerOpacity }]}>NEOPAGER</Text>
+      <Text style={[styles.bgMainTitle, { color: theme.titleColor, textShadowColor: theme.neonColor, opacity: flickerOpacity }]}>PAGER</Text>
 
       <TouchableOpacity onPress={() => setCurrentTheme(null)} style={styles.backBtn}>
           <Text style={{color: theme.branding, fontSize: 10, fontWeight:'bold', backgroundColor: currentTheme==='LIGHT'?'#fff':'transparent'}}> REBOOT SYSTEM </Text>
@@ -261,11 +260,11 @@ export default function RetroPagerUI() {
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
                   <TouchableOpacity 
                       style={[styles.aiButton, {borderColor: theme.branding, backgroundColor: currentTheme==='LIGHT'?'#000':'#FFD700'}]} 
-                      onPress={handleAIDecrypt} // 🚨 CONECTAT AICI
+                      onPress={handleAIDecrypt} 
                       activeOpacity={0.6}
                   >
                      <Text style={[styles.aiButtonText, {color: currentTheme==='LIGHT'?'#fff':'#000'}]}>
-                        AI {decryptedText ? '🔓' : '✨'} {/* Arată lacăt deschis când e decriptat */}
+                        AI {decryptedText ? '🔓' : '✨'} {}
                      </Text>
                   </TouchableOpacity>
                   <View style={[styles.ledLight, { backgroundColor: isTransmitting ? '#ff3333' : '#330000', borderColor: theme.branding }]}>
@@ -300,7 +299,7 @@ export default function RetroPagerUI() {
                         </View>
                       ) : isGroupMgmtMode ? (
                           <View style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', height: '100%', paddingLeft: 10, paddingTop: 5}}>
-                              {/* Randează direct visibleGroupOptions fără slice generic */}
+                              {}
                               {visibleGroupOptions.map((item) => (
                                   <Text key={item.label} style={{ 
                                       fontFamily: 'VT323_400Regular', 
@@ -317,7 +316,7 @@ export default function RetroPagerUI() {
                               ))}
                           </View>
 
-                      /* CAZ 3: MENIURI GENERICE (ISTORIC, CONTACTE ETC) */
+                      /* meniuri genrice istoric*/
                       ) : isMenuMode || isMessageMenuMode || isHistoryMode || isAddMemberMode || isGroupMembersViewMode ? (
               
                           <View style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', height: '100%', paddingLeft: 10, paddingTop: 5}}>

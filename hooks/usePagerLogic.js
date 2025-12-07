@@ -38,7 +38,7 @@ export function usePagerLogic() {
   const [contacts, setContacts] = useState(["LOADING..."]);
   const [contactsMap, setContactsMap] = useState({});
   const [groups, setGroups] = useState([]); 
-  const [sentHistory, setSentHistory] = useState(["HELLO!", "RUNNING LATE", "NEED HELP ASAP", "WHERE ARE YOU?"]);
+
   
   const [newGroupName, setNewGroupName] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -67,6 +67,40 @@ export function usePagerLogic() {
   const [isGameActive, setIsGameActive] = useState(false);
   const [mode, setMode] = useState('READ'); 
   const BEEP_SOUND_ASSET = require('../assets/images/beep.mp3');
+
+  // Lista de coduri de pager cu semnificațiile lor
+  const predefinedHistory = [
+    "17 (No)",   
+    "25 (Sorry)", 
+    "99 (Nighty night)", 
+    "100 (Available)",  
+    "121 (Need 2 talk)",  
+    "143 (I love you)",  
+    "157 (Keep in touch)", 
+    "187 (I hate you)",  
+    "220 (Where are you?)", 
+    "265 (Check mail)",  
+    "290 (No pager)",  
+    "333 (Whats up?)",  
+    "345 (Thank you)",  
+    "346 (Call back)",  
+    "370 (Congrats)",  
+    "411 (Question)",  
+    "424 (Call me)",  
+    "435 (Yes)",  
+    "4673 (Sweet dreams)", 
+    "480 (Let me know)",  
+    "504 (Urgent)",  
+    "505 (SOS)",  
+    "601 (Happy bday)",  
+    "607 (Miss you)",  
+    "911 (Emergency)",
+  ];
+
+ const [sentHistory, setSentHistory] = useState([
+    ...predefinedHistory,
+    "HELLO!", "RUNNING LATE", "NEED HELP ASAP", "WHERE ARE YOU?"
+  ]);
 
   // --- 1. ÎNCĂRCARE DATE LA PORNIRE (User + Grupuri) ---
   useEffect(() => {
@@ -503,7 +537,7 @@ const getCurrentGroupMembers = () => {
             }
             return;
         }
-        if (mode === 'AI_PROMPT') {
+if (mode === 'AI_PROMPT') {
             if (aiPrompt.trim().length === 0) { setFeedbackMessage("PROMPT REQUIRED"); return; }
             setFeedbackMessage("ENCRYPTING..."); 
             try {
@@ -520,25 +554,40 @@ const getCurrentGroupMembers = () => {
                     return;
                 }
                 
-                let realRecipient = "";
+                // --- MODIFICARE: Logica de trimitere Grup vs Contact ---
                 if (targetRecipient.mode === 'GROUPS') {
-                    realRecipient = targetRecipient.name; 
+                    const groupObj = groups.find(g => g.name === targetRecipient.name);
+                    if (groupObj && groupObj.members) {
+                        groupObj.members.forEach(memberPhone => {
+                            if (memberPhone !== myPhoneNumber) {
+                                sendDataToServer({ 
+                                    to: memberPhone, 
+                                    text: finalCode, 
+                                    type: 'ENCRYPTED', 
+                                    from: myPhoneNumber 
+                                });
+                            }
+                        });
+                        setFeedbackMessage(`SENT TO GROUP!`);
+                    } else {
+                         setFeedbackMessage("ERR: EMPTY GROUP");
+                    }
                 } else {
-                    realRecipient = contactsMap[targetRecipient.name]; 
+                    const realRecipient = contactsMap[targetRecipient.name]; 
+                    if (realRecipient) {
+                        sendDataToServer({ 
+                            to: realRecipient, 
+                            text: finalCode, 
+                            type: 'ENCRYPTED', 
+                            from: myPhoneNumber
+                        });
+                        setFeedbackMessage(`SENT: ${finalCode}`);
+                    } else {
+                        setFeedbackMessage("ERR: NO NUMBER");
+                    }
                 }
-                
-                if (!realRecipient) {
-                    setFeedbackMessage("ERR: NO NUMBER");
-                    return;
-                }
-                
-                sendDataToServer({ 
-                    to: realRecipient, 
-                    text: finalCode, 
-                    type: 'ENCRYPTED', 
-                    from: myPhoneNumber
-                });
-                setFeedbackMessage(`SENT: ${finalCode}`);
+                // -----------------------------------------------------
+
             } catch(e) { setFeedbackMessage("AI SERVER ERROR!"); }
             setAiPrompt('');
             setTargetRecipient(null);
@@ -589,26 +638,43 @@ const getCurrentGroupMembers = () => {
              setFeedbackMessage(`${memberToAddName} ADDED!`);
              setMode('GROUP_MGMT_MENU');
         }
-        else if (mode === 'SENT_HISTORY_VIEW') {
+else if (mode === 'SENT_HISTORY_VIEW') {
             const messageToSend = sentHistory[historyIndex];
-            let realRecipient = "";
-            if (targetRecipient.mode === 'GROUPS') {
-                realRecipient = targetRecipient.name;
-            } else {
-                realRecipient = contactsMap[targetRecipient.name];
-            }
             
-            if (realRecipient) {
-                sendDataToServer({ 
-                    to: realRecipient, 
-                    text: messageToSend,
-                    type: 'HISTORY_MSG',
-                    from: myPhoneNumber
-                });
-                setFeedbackMessage(`SENT: ${messageToSend.slice(0, 10)}...`);
+            // --- MODIFICARE: Logica de trimitere Grup vs Contact ---
+            if (targetRecipient.mode === 'GROUPS') {
+                const groupObj = groups.find(g => g.name === targetRecipient.name);
+                if (groupObj && groupObj.members) {
+                    groupObj.members.forEach(memberPhone => {
+                        if (memberPhone !== myPhoneNumber) {
+                            sendDataToServer({ 
+                                to: memberPhone, 
+                                text: messageToSend,
+                                type: 'HISTORY_MSG',
+                                from: myPhoneNumber
+                            });
+                        }
+                    });
+                    setFeedbackMessage(`GROUP SENT!`);
+                } else {
+                     setFeedbackMessage("ERR: EMPTY GROUP");
+                }
             } else {
-                setFeedbackMessage("ERR: NO NUMBER");
+                const realRecipient = contactsMap[targetRecipient.name];
+                if (realRecipient) {
+                    sendDataToServer({ 
+                        to: realRecipient, 
+                        text: messageToSend,
+                        type: 'HISTORY_MSG',
+                        from: myPhoneNumber
+                    });
+                    setFeedbackMessage(`SENT: ${messageToSend.slice(0, 10)}...`);
+                } else {
+                    setFeedbackMessage("ERR: NO NUMBER");
+                }
             }
+            // -----------------------------------------------------
+
             setTargetRecipient(null);
             setMode('READ');
             setTimeout(() => setFeedbackMessage(null), 2000); 
@@ -651,9 +717,7 @@ const getCurrentGroupMembers = () => {
   const contactsForSelectionFinal = contactsForSelectionBase.filter(contactName => {
       const groupMembers = groups.find(g => g.name === currentGroup)?.members;
       const contactPhone = contactsMap[contactName];
-      // Doar pentru ADD MEMBER, filtrăm membrii existenți
       if (mode === 'ADD_MEMBER_SELECTION') {
-          // Filtrăm membrii care nu sunt deja în grup SAU nu au număr de telefon valid
           return currentGroup && contactPhone && !groupMembers.includes(contactPhone);
       }
       return true;
@@ -725,9 +789,7 @@ const getCurrentGroupMembers = () => {
     displayText,
     decryptMessage,
     decryptedText,
-    // EXPUS: Noua funcție de decriptare
     handleAIDecrypt,
-    // Am inclus GAME_VIEW în condiția de afișare a cursorului
     showCursor: !mode.includes('TYPING') && mode !== 'MSG_MENU' && mode !== 'GROUP_MGMT_MENU' && mode !== 'ADD_MEMBER_SELECTION' && mode !== 'GROUP_MEMBERS_VIEW' && mode !== 'GAME_VIEW', 
     handleButtonPress,
     currentIndex: currentDisplayIndex,
@@ -746,7 +808,6 @@ const getCurrentGroupMembers = () => {
     addMemberIndex,
     sentHistory, historyIndex, feedbackMessage,
     newGroupName, setNewGroupName, aiPrompt, setAiPrompt,
-    // EXPUS: Stările de căutare
     searchTerm, setSearchTerm, searchIndex, contactsForSelectionBase: contactsForSelectionBase, 
     MAX_GROUP_LENGTH, MAX_AI_PROMPT_LENGTH, notificationData,
     currentGroupMembers: getCurrentGroupMembers(),
