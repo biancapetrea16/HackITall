@@ -12,6 +12,8 @@ const MAX_AI_PROMPT_LENGTH = 120;
 const MENU_ITEMS = ["CONTACTS", "GROUPS", "CREATE GROUP"];
 const MESSAGE_MENU_ITEMS = ["CUSTOM AI PROMPT", "SENT HISTORY"];
 const SENT_HISTORY_MESSAGES = ["HELLO!", "RUNNING LATE", "NEED HELP ASAP", "WHERE ARE YOU?"];
+const GROUP_MGMT_OPTIONS = ["ADD PEOPLE", "SEND MESSAGE"];
+
 
 export function usePagerLogic() {
   
@@ -26,6 +28,8 @@ export function usePagerLogic() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [targetRecipient, setTargetRecipient] = useState(null);
   
+  const [currentGroup, setCurrentGroup] = useState(null);
+  
   const [notificationData, setNotificationData] = useState(null);
 
   const [currentTheme, setCurrentTheme] = useState(null);
@@ -33,12 +37,47 @@ export function usePagerLogic() {
   const [menuIndex, setMenuIndex] = useState(0); 
   const [messageMenuIndex, setMessageMenuIndex] = useState(0);
   const [historyIndex, setHistoryIndex] = useState(0); 
+  const [groupMgmtIndex, setGroupMgmtIndex] = useState(0);
+  const [addMemberIndex, setAddMemberIndex] = useState(0);
 
   const [showCursor, setShowCursor] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState(null);
 
   const [mode, setMode] = useState('READ'); 
+
+    // --- 2. FUNCȚIA DE SUNET ---
+  async function playBeep() {
+    try {
+      // Creează și încarcă sunetul din assets
+      const { sound } = await Audio.Sound.createAsync(
+         require('../assets/beep.mp3') 
+      );
+      await sound.playAsync();
+      
+      // Eliberăm memoria după ce termină
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log("Nu am găsit fișierul beep.mp3 sau eroare audio:", error);
+    }
+  }
+
+  // 🚨 FUNCȚIE DEDICATĂ PENTRU SEND (IZOLEAZĂ EROAREA DE FETCH)
+  const sendDataToServer = (data) => {
+      fetch(`${SERVER_URL}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+      }).catch((e) => {
+          console.log("FETCH ERROR:", e);
+          setFeedbackMessage("FETCH ERR! CHECK URL!");
+      });
+  };
+
 
   // 1. SETUP CONTACTS (restul la fel)
   useEffect(() => {
@@ -90,7 +129,9 @@ export function usePagerLogic() {
                     }
                 });
                 if (hasNew) {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    playBeep();
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                    setTimeout(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }, 200);
                     setFeedbackMessage(null); 
                     setCurrentIndex(messages.length - 1); 
                 }
@@ -107,7 +148,22 @@ export function usePagerLogic() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🎯 FUNCȚIA PRINCIPALĂ DE GESTIONARE A BUTOANELOR
+
+  // --- LOGICĂ ADĂUGARE MEMBRU ÎN GRUP ---
+  const addMemberToGroup = (groupName, memberName) => {
+      setGroups(prevGroups => 
+          prevGroups.map(group => {
+              if (group.name === groupName) {
+                  if (!group.members.includes(memberName)) {
+                      return { ...group, members: [...group.members, memberName] };
+                  }
+              }
+              return group;
+          })
+      );
+  };
+
+
   const handleButtonPress = (label) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isSending) return;
@@ -140,6 +196,13 @@ export function usePagerLogic() {
             setMode(targetRecipient.mode); 
             setTargetRecipient(null);
         }
+        else if (mode === 'GROUP_MGMT_MENU') { 
+             setMode('GROUPS');
+             setCurrentGroup(null);
+        }
+        else if (mode === 'ADD_MEMBER_SELECTION') { 
+             setMode('GROUP_MGMT_MENU');
+        }
         else if (mode === 'MENU') {
             setMode('READ'); 
             setCurrentIndex(0);
@@ -156,7 +219,9 @@ export function usePagerLogic() {
       case 'UP':
         if (mode === 'MENU') setMenuIndex(prev => (prev > 0 ? prev - 1 : 0));
         else if (mode === 'MSG_MENU') setMessageMenuIndex(prev => (prev > 0 ? prev - 1 : 0));
+        else if (mode === 'GROUP_MGMT_MENU') setGroupMgmtIndex(prev => (prev > 0 ? prev - 1 : 0));
         else if (mode === 'SENT_HISTORY_VIEW') setHistoryIndex(prev => (prev > 0 ? prev - 1 : 0));
+        else if (mode === 'ADD_MEMBER_SELECTION') setAddMemberIndex(prev => (prev > 0 ? prev - 1 : 0));
         else if (mode === 'READ') setCurrentIndex(prev => (prev > 0 ? prev - 1 : 0));
         else { // CONTACTS / GROUPS
              setCurrentIndex(prev => (prev > 0 ? prev - 1 : 0));
@@ -167,47 +232,42 @@ export function usePagerLogic() {
         if (mode === 'READ' && currentIndex === 0) return; 
         if (mode === 'MENU') setMenuIndex(prev => (prev < MENU_ITEMS.length - 1 ? prev + 1 : prev));
         else if (mode === 'MSG_MENU') setMessageMenuIndex(prev => (prev < MESSAGE_MENU_ITEMS.length - 1 ? prev + 1 : prev));
+        else if (mode === 'GROUP_MGMT_MENU') setGroupMgmtIndex(prev => (prev < GROUP_MGMT_OPTIONS.length - 1 ? prev + 1 : prev));
         else if (mode === 'SENT_HISTORY_VIEW') setHistoryIndex(prev => (prev < SENT_HISTORY_MESSAGES.length - 1 ? prev + 1 : prev));
+        else if (mode === 'ADD_MEMBER_SELECTION') setAddMemberIndex(prev => (prev < contactsForSelectionFinal.length - 1 ? prev + 1 : prev));
         else { // READ / CONTACTS / GROUPS
             const currentList = mode === 'READ' ? messages : (mode === 'GROUPS' ? groups : contacts);
             let maxIndex = currentList.length - 1;
             setCurrentIndex(prev => (prev < maxIndex ? prev + 1 : maxIndex));
         }
         break;
-        
-      // 🎯 CAZUL SEND (Butonul OK/SELECT/SEND din dreapta)
+
       case 'SEND':
-        // CAZUL A: SUBMIT GROUP NAME
+        // CAZUL A: SUBMIT GROUP NAME (CREARE GRUP)
         if (mode === 'GROUP_TYPING') {
             if (newGroupName.trim().length === 0) { setFeedbackMessage("NAME REQUIRED"); } 
             else {
-                setGroups(prev => [...prev, newGroupName.toUpperCase()]);
+                setGroups(prev => [...prev, {name: newGroupName.toUpperCase(), members: []}]);
                 setFeedbackMessage(`GROUP ${newGroupName.toUpperCase()} ADDED!`);
                 setMode('READ');
                 setNewGroupName(''); 
             }
             return;
         }
-        
-        // CAZUL B: SUBMIT AI PROMPT
+
+        // CAZUL B: SUBMIT AI PROMPT (TRIMITE)
         if (mode === 'AI_PROMPT') {
             if (aiPrompt.trim().length === 0) { setFeedbackMessage("PROMPT REQUIRED"); return; }
-            
-            // Logica AI (Fetch către server cu promptul)
             setFeedbackMessage(`AI PROMPT SENT to ${targetRecipient.name}`);
-            setSentHistory(prev => [...prev, aiPrompt.toUpperCase()]); // Adaugă promptul la istoric
+            setSentHistory(prev => [...prev, aiPrompt.toUpperCase()]); 
             
-            // 🚨 Fetch-ul REAL de AI se face AICI:
-            fetch(`${SERVER_URL}/send`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    to: targetRecipient.name, 
-                    text: aiPrompt,
-                    type: 'AI_PROMPT', // Indicăm serverului că e mesaj AI
-                    from: MY_ID
-                })
-            }).catch((e) => console.log("AI Send Error:", e));
+            // 🎯 FOLOSIM NOUA FUNCȚIE
+            sendDataToServer({ 
+                to: targetRecipient.name, 
+                text: aiPrompt,
+                type: 'AI_PROMPT', 
+                from: MY_ID
+            });
 
             setAiPrompt('');
             setTargetRecipient(null);
@@ -230,22 +290,42 @@ export function usePagerLogic() {
              if (selectedOption === 'CUSTOM AI PROMPT') { setMode('AI_PROMPT'); setAiPrompt(''); } 
              else if (selectedOption === 'SENT HISTORY') { setMode('SENT_HISTORY_VIEW'); setHistoryIndex(0); }
         }
+
+        // CAZUL E: SELECTARE OPȚIUNE MENIU DE MANAGEMENT GRUP (GROUP_MGMT_MENU)
+        else if (mode === 'GROUP_MGMT_MENU') {
+            const selectedOption = GROUP_MGMT_OPTIONS[groupMgmtIndex];
+            if (selectedOption === 'ADD PEOPLE') {
+                if (contactsForSelectionFinal.length === 0) {
+                     setFeedbackMessage("NO NEW MEMBERS!");
+                     return;
+                }
+                setMode('ADD_MEMBER_SELECTION');
+                setAddMemberIndex(0);
+            } else if (selectedOption === 'SEND MESSAGE') {
+                setTargetRecipient({name: currentGroup, mode: 'GROUPS', index: -1}); 
+                setMode('MSG_MENU');
+            }
+        }
+
+        // CAZUL F: SELECTARE MEMBRU NOU -> ADĂUGARE ÎN GRUP (ADD_MEMBER_SELECTION)
+        else if (mode === 'ADD_MEMBER_SELECTION') {
+             const memberToAdd = contactsForSelectionFinal[addMemberIndex];
+             addMemberToGroup(currentGroup, memberToAdd);
+             setFeedbackMessage(`${memberToAdd} ADDED TO ${currentGroup}!`);
+             setMode('GROUP_MGMT_MENU');
+        }
         
-        // CAZUL E: SELECTARE MESAJ DIN ISTORIC -> TRIMITERE FINALĂ
+        // CAZUL G: SELECTARE MESAJ DIN ISTORIC -> TRIMITERE FINALĂ
         else if (mode === 'SENT_HISTORY_VIEW') {
             const messageToSend = sentHistory[historyIndex];
             
-            // 🚨 Fetch-ul REAL de istoric se face AICI:
-            fetch(`${SERVER_URL}/send`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    to: targetRecipient.name, 
-                    text: messageToSend,
-                    type: 'HISTORY_MSG',
-                    from: MY_ID
-                })
-            }).catch((e) => console.log("History Send Error:", e));
+            // 🎯 FOLOSIM NOUA FUNCȚIE
+            sendDataToServer({ 
+                to: targetRecipient.name, 
+                text: messageToSend,
+                type: 'HISTORY_MSG',
+                from: MY_ID
+            });
 
             setFeedbackMessage(`SENT: ${messageToSend.slice(0, 10)}... to ${targetRecipient.name}`);
             setTargetRecipient(null);
@@ -253,15 +333,27 @@ export function usePagerLogic() {
             setTimeout(() => setFeedbackMessage(null), 2000); 
         }
 
-        // CAZUL F: SELECTARE CONTACT/GRUP -> DESCHIDE MENIU DE MESAJE (MSG_MENU)
-        else if (mode === 'CONTACTS' || mode === 'GROUPS') {
-            const target = mode === 'CONTACTS' ? contacts[currentIndex] : groups[currentIndex];
+        // CAZUL H: SELECTARE CONTACT/GRUP -> DESCHIDE MENIU (PREGĂTIRE)
+        else if (mode === 'CONTACTS') {
+            const target = contacts[currentIndex];
             setTargetRecipient({name: target, mode: mode, index: currentIndex});
             setMode('MSG_MENU');
             setMessageMenuIndex(0); 
         }
+        else if (mode === 'GROUPS') {
+            const targetGroupObject = groups[currentIndex]; 
+            
+            if (!targetGroupObject) {
+                 setFeedbackMessage("NO GROUP SELECTED!");
+                 return;
+            }
+
+            setCurrentGroup(targetGroupObject.name); 
+            setMode('GROUP_MGMT_MENU');
+            setGroupMgmtIndex(0);
+        }
         
-        // CAZUL G: APĂSARE OK DIN MODUL READ (Nu face nimic)
+        // CAZUL I: APĂSARE OK DIN MODUL READ 
         else if (mode === 'READ') {
             setFeedbackMessage("PRESS MENU TO START");
             setTimeout(() => setFeedbackMessage(null), 1500); 
@@ -273,7 +365,16 @@ export function usePagerLogic() {
     }
   };
 
-  // Logică de Afișare
+
+  // --- CALCUL LOGICĂ AFIȘARE (Mutat în față pentru a fi definit) ---
+  
+  // Lista de contacte filtrată pentru adăugare (Exclude membrii existenți)
+  const contactsForSelectionFinal = contacts.filter(contact => {
+      const groupMembers = groups.find(g => g.name === currentGroup)?.members;
+      return currentGroup && groupMembers && !groupMembers.includes(contact);
+  });
+  
+  // --- LOGICĂ AFIȘARE ---
   let displayText;
   let currentListLength = 0;
   let currentDisplayIndex = 0;
@@ -287,7 +388,7 @@ export function usePagerLogic() {
       currentListLength = contacts.length;
       currentDisplayIndex = currentIndex;
   } else if (mode === 'GROUPS') { 
-      displayText = groups[currentIndex] || "NO GROUPS";
+      displayText = groups[currentIndex]?.name || "NO GROUPS"; 
       currentListLength = groups.length;
       currentDisplayIndex = currentIndex;
   } else if (mode === 'SENT_HISTORY_VIEW') {
@@ -298,18 +399,24 @@ export function usePagerLogic() {
       displayText = "MAIN MENU"; 
   } else if (mode === 'MSG_MENU') { 
       displayText = `MSG TO: ${targetRecipient?.name || 'ERR'}`; 
+  } else if (mode === 'GROUP_MGMT_MENU') {
+      displayText = `MANAGE: ${currentGroup || 'ERR'}`;
+  } else if (mode === 'ADD_MEMBER_SELECTION') {
+       displayText = contactsForSelectionFinal[addMemberIndex] || `ADD TO ${currentGroup}:`;
+       currentListLength = contactsForSelectionFinal.length;
+       currentDisplayIndex = addMemberIndex;
   } else {
       displayText = messages[currentIndex] || "NO MSGS";
       currentListLength = messages.length;
       currentDisplayIndex = currentIndex;
   }
   
-  const totalItems = feedbackMessage || isSending || mode === 'GROUP_TYPING' || mode === 'AI_PROMPT' ? -1 : currentListLength;
+  const totalItems = feedbackMessage || isSending || mode.includes('TYPING') ? -1 : currentListLength;
 
 
   return {
     displayText,
-    showCursor: mode !== 'GROUP_TYPING' && mode !== 'AI_PROMPT' && mode !== 'MSG_MENU', 
+    showCursor: !mode.includes('TYPING') && mode !== 'MSG_MENU' && mode !== 'GROUP_MGMT_MENU' && mode !== 'ADD_MEMBER_SELECTION', 
     handleButtonPress,
     currentIndex: currentDisplayIndex,
     totalMessages: totalItems,
@@ -321,15 +428,12 @@ export function usePagerLogic() {
     menuIndex,
     messageMenuIndex,
     messageMenuItems: MESSAGE_MENU_ITEMS,
-    sentHistory, 
-    historyIndex,
-    feedbackMessage,
-    newGroupName, 
-    setNewGroupName,
-    aiPrompt,
-    setAiPrompt,
-    MAX_GROUP_LENGTH,
-    MAX_AI_PROMPT_LENGTH,
-    notificationData 
+    groupMgmtOptions: GROUP_MGMT_OPTIONS,
+    groupMgmtIndex,
+    contactsForSelection: contactsForSelectionFinal, 
+    addMemberIndex,
+    sentHistory, historyIndex, feedbackMessage,
+    newGroupName, setNewGroupName, aiPrompt, setAiPrompt,
+    MAX_GROUP_LENGTH, MAX_AI_PROMPT_LENGTH, notificationData 
   };
 }

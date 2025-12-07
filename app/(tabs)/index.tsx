@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Dimensions, TextInput } from 'react-native'; 
 import { useFonts, VT323_400Regular } from '@expo-google-fonts/vt323';
-import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { usePagerLogic } from '../../hooks/usePagerLogic'; 
+import { usePagerLogic } from '../../hooks/usePagerLogic';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,6 +24,7 @@ function useNeonFlicker() {
   return opacity;
 }
 
+// --- CONFIGURAREA CELOR 4 TEME ---
 const THEMES = {
   CLASSIC: { 
     body: '#111', bodyBorder: '#333', bezel: '#000', screen: '#0f1f0f', 
@@ -64,8 +65,9 @@ export default function RetroPagerUI() {
     newGroupName, setNewGroupName, MAX_GROUP_LENGTH,
     messageMenuIndex, messageMenuItems, sentHistory, historyIndex,
     aiPrompt, setAiPrompt, MAX_AI_PROMPT_LENGTH,
-    // NOU
-    notificationData 
+    notificationData,
+    groupMgmtOptions, groupMgmtIndex,
+    contactsForSelection, addMemberIndex,
   } = usePagerLogic();
 
   const flickerOpacity = useNeonFlicker();
@@ -78,7 +80,7 @@ export default function RetroPagerUI() {
 
   if (!fontsLoaded) return <View style={styles.loading}><Text>Loading...</Text></View>;
 
-  // --- ECRAN INTRO ---
+  // --- ECRAN INTRO (Dacă currentTheme nu e setat, arătăm meniul de teme) ---
   if (!currentTheme) {
       return (
           <View style={styles.mainContainer}>
@@ -117,19 +119,54 @@ export default function RetroPagerUI() {
       );
   }
 
-  // --- ECRAN PAGER ---
+  // --- ECRAN PAGER (Dacă currentTheme este setat) ---
+  
   const theme = THEMES[currentTheme]; 
+  
+  // 🚨 CLAUZĂ DE SIGURANȚĂ (GUARD CLAUSE) FIX (Eroarea de la linia 133)
+  if (!theme) {
+      // Dacă se întâmplă o eroare de reload (currentTheme e corupt), revenim la intro.
+      setCurrentTheme(null);
+      return <View style={styles.loading}><Text style={{color: 'red'}}>ERROR: Resetting Theme...</Text></View>;
+  }
+
   const isTransmitting = displayText === 'SENDING...';
   const isMenuMode = mode === 'MENU';
   const isMessageMenuMode = mode === 'MSG_MENU';
   const isHistoryMode = mode === 'SENT_HISTORY_VIEW';
+  const isGroupMgmtMode = mode === 'GROUP_MGMT_MENU';
+  const isAddMemberMode = mode === 'ADD_MEMBER_SELECTION';
   const isTypingMode = mode === 'GROUP_TYPING' || mode === 'AI_PROMPT';
   const isSelectionMode = mode === 'CONTACTS' || mode === 'GROUPS';
   const isFeedbackMode = totalMessages === -1; 
 
-  // LOGICĂ A MENIULUI CURENT
-  const currentMenu = isMenuMode ? menuItems : isMessageMenuMode ? messageMenuItems : isHistoryMode ? sentHistory : [];
-  const currentMenuIndex = isMenuMode ? menuIndex : isMessageMenuMode ? messageMenuIndex : historyIndex;
+  // LOGICĂ AFIȘARE MENIU/LISTĂ
+  let currentList = [];
+  let currentSelectionIndex = 0;
+  let headerText = '';
+
+  if (isMenuMode) {
+      currentList = menuItems;
+      currentSelectionIndex = menuIndex;
+      headerText = 'MAIN MENU';
+  } else if (isMessageMenuMode) {
+      currentList = messageMenuItems;
+      currentSelectionIndex = messageMenuIndex;
+      headerText = 'MSG SELECT';
+  } else if (isGroupMgmtMode) {
+      currentList = groupMgmtOptions;
+      currentSelectionIndex = groupMgmtIndex;
+      headerText = 'GROUP MGMT';
+  } else if (isHistoryMode) {
+      currentList = sentHistory;
+      currentSelectionIndex = historyIndex;
+      headerText = 'SENT HISTORY';
+  } else if (isAddMemberMode) {
+      currentList = contactsForSelection;
+      currentSelectionIndex = addMemberIndex;
+      headerText = 'ADD MEMBER';
+  }
+
 
   // LOGICĂ INPUT
   const currentInput = mode === 'GROUP_TYPING' ? newGroupName : aiPrompt;
@@ -157,13 +194,12 @@ export default function RetroPagerUI() {
           <Text style={{color: theme.branding, fontSize: 10, fontWeight:'bold', backgroundColor: currentTheme==='LIGHT'?'#fff':'transparent'}}> REBOOT SYSTEM </Text>
       </TouchableOpacity>
 
-      {/* --- CARCASA PAGERULUI (Pozitionata relativ pt Pop-up) --- */}
       <View style={[styles.pagerBody, { 
           backgroundColor: theme.body, borderColor: theme.bodyBorder, shadowOpacity: currentTheme === 'LIGHT' ? 0.2 : 0.6,
           borderWidth: currentTheme === 'LIGHT' ? 4 : 2, shadowColor: theme.neonColor
       }]}>
         
-        {/* --- NOU: POP-UP NOTIFICARE --- */}
+        {/* --- POP-UP NOTIFICARE --- */}
         {notificationData && (
              <View style={[styles.notificationPopup, {borderColor: theme.neonColor, backgroundColor: theme.body}]}>
                  <Text style={[styles.notificationTitle, {color: theme.neonColor}]}>*** NEW MESSAGE ***</Text>
@@ -213,12 +249,20 @@ export default function RetroPagerUI() {
                                 {maxInputLength - currentInput.length} chars left
                             </Text>
                         </View>
-                      ) : isMenuMode || isMessageMenuMode || isHistoryMode ? (
-                          // MODUL DE MENIU LISTĂ SAU ISTORIC
+                      ) : isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? (
+                          // MODUL DE MENIU LISTĂ SAU ISTORIC SAU ADĂUGARE MEMBRU
                           <View style={{flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', height: '100%', paddingLeft: 10}}>
-                              {currentMenu.map((item, idx) => (
-                                  <Text key={idx} style={{ fontFamily: 'VT323_400Regular', fontSize: isHistoryMode ? 18 : 22, lineHeight: isHistoryMode ? 20 : 24, position: 'relative', color: idx === currentMenuIndex ? theme.textReal : theme.branding, opacity: idx === currentMenuIndex ? 1 : 0.5, textShadowColor: idx === currentMenuIndex ? theme.textReal : 'transparent', textShadowRadius: 5 }}>
-                                      {idx === currentMenuIndex ? "> " : "  "}{item}
+                              {currentList.map((item, idx) => (
+                                  <Text key={idx} style={{ 
+                                      fontFamily: 'VT323_400Regular', 
+                                      fontSize: isHistoryMode ? 18 : 22, 
+                                      lineHeight: isHistoryMode ? 20 : 24, 
+                                      position: 'relative', 
+                                      color: idx === currentSelectionIndex ? theme.textReal : theme.branding,
+                                      opacity: idx === currentSelectionIndex ? 1 : 0.5,
+                                      textShadowColor: idx === currentSelectionIndex ? theme.textReal : 'transparent', textShadowRadius: 5
+                                  }}>
+                                      {idx === currentSelectionIndex ? "> " : "  "}{item}
                                   </Text>
                               ))}
                           </View>
@@ -237,7 +281,7 @@ export default function RetroPagerUI() {
 
                     <View style={[styles.lcdIcons, { borderTopColor: theme.branding }]}>
                       <Text style={[styles.iconText, { color: theme.textReal, opacity: 0.7 }]}>
-                        {isMenuMode ? 'MAIN MENU' : isMessageMenuMode ? 'MSG SELECT' : isHistoryMode ? 'HISTORY' : isTypingMode ? 'INPUT' : isFeedbackMode ? 'CONFIRMED' : isSelectionMode ? 'SELECT...' : `Msg ${currentIndex + 1}/${totalMessages}`}
+                        {headerText || (isSelectionMode ? 'SELECT CONTACT' : `Msg ${currentIndex + 1}/${totalMessages}`)}
                       </Text>
                       <Text style={[styles.iconText, { color: isTransmitting ? 'red' : theme.textReal, opacity: 0.7 }]}>
                         {isTransmitting ? 'TX >>>' : 'BAT OK'}
@@ -250,7 +294,7 @@ export default function RetroPagerUI() {
         <View style={styles.middleDeco}>
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
             <Text style={[styles.instructionText, { color: theme.branding }]}>
-               {isMenuMode || isMessageMenuMode || isHistoryMode ? 'NAVIGATE' : isTypingMode ? 'PRESS OK TO SAVE' : isFeedbackMode ? 'SENT' : '1-WAY PAGING'}
+               {isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? 'NAVIGATE' : isTypingMode ? 'PRESS OK TO SAVE' : isFeedbackMode ? 'SENT' : '1-WAY PAGING'}
             </Text>
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
         </View>
@@ -262,7 +306,7 @@ export default function RetroPagerUI() {
             onPress={() => handleButtonPress('BTN_MENU')} 
             activeOpacity={0.6}>
             <View style={styles.buttonInset} />
-            <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT'?'#000':'#FFF'}]}>{isMenuMode || isTypingMode || isMessageMenuMode || isHistoryMode ? 'BACK' : 'MENU'}</Text>
+            <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT'?'#000':'#FFF'}]}>{isMenuMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? 'BACK' : 'MENU'}</Text>
           </TouchableOpacity>
           
           <View style={styles.arrowsContainer}>
@@ -276,12 +320,12 @@ export default function RetroPagerUI() {
           </View>
           
           <TouchableOpacity 
-            style={[styles.bigButton, { backgroundColor: (isMenuMode || isSelectionMode || isTypingMode || isMessageMenuMode || isHistoryMode) ? theme.buttonAction : theme.button, borderColor: theme.buttonBorder }]} 
+            style={[styles.bigButton, { backgroundColor: (isMenuMode || isSelectionMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode) ? theme.buttonAction : theme.button, borderColor: theme.buttonBorder }]} 
             onPress={() => handleButtonPress('SEND')} 
             activeOpacity={0.6}>
             <View style={styles.buttonInset} />
             <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT' && !isMenuMode && !isSelectionMode ? '#000' : '#FFF'}]}>
-                {isTypingMode || isMessageMenuMode || isHistoryMode ? 'SELECT' : isSelectionMode ? 'OK' : 'SEND'}
+                {isTypingMode || isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? 'SELECT' : isSelectionMode ? 'OK' : 'SEND'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -309,7 +353,7 @@ const styles = StyleSheet.create({
   terminalBtn: { borderWidth: 2, paddingVertical: 12, paddingHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.5)', width: '80%', alignItems: 'center', borderRadius: 10 },
   terminalBtnText: { fontFamily: 'VT323_400Regular', fontSize: 28, letterSpacing: 2 },
   backBtn: { position: 'absolute', top: 50, padding: 10, zIndex: 10 },
-  pagerBody: { width: width * 0.85,  height: height * 0.55, marginTop: 60, borderRadius: 25, padding: 15, justifyContent: 'space-between', borderTopWidth: 2, borderLeftWidth: 2, borderRightWidth: 6, borderBottomWidth: 8, shadowOffset: { width: 0, height: 10 }, shadowRadius: 15, elevation: 20, zIndex: 5 },
+  pagerBody: { width: width * 0.85,  height: height * 0.55, marginTop: 60, borderRadius: 25, padding: 15, justifyContent: 'space-between', borderTopWidth: 2, borderLeftWidth: 2, borderRightWidth: 6, borderBottomWidth: 8, shadowOffset: { width: 0, height: 10 }, shadowRadius: 15, elevation: 20, zIndex: 5, position: 'relative' },
   topSection: {},
   brandingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, paddingHorizontal: 5 },
   brandText: { fontWeight: 'bold', fontSize: 12, fontStyle: 'italic' },
