@@ -11,7 +11,9 @@ const MAX_AI_PROMPT_LENGTH = 120;
 
 const MENU_ITEMS = ["CONTACTS", "GROUPS", "CREATE GROUP", "LOGOUT"];
 const MESSAGE_MENU_ITEMS = ["CUSTOM AI PROMPT", "SENT HISTORY"];
-const GROUP_MGMT_OPTIONS = ["ADD PEOPLE", "VIEW MEMBERS", "SEND MESSAGE"];
+
+// Modificat: Adăugat "START GAME"
+const GROUP_MGMT_OPTIONS = ["ADD PEOPLE", "VIEW MEMBERS", "SEND MESSAGE", "START GAME"];
 
 // --- FUNCȚIE HELPER PENTRU NORMALIZARE ---
 const normalizePhoneNumber = (phone) => {
@@ -55,7 +57,12 @@ export function usePagerLogic() {
   const [showCursor, setShowCursor] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState(null);
-    //game variables
+  
+  // Stări pentru funcționalitatea de căutare
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchIndex, setSearchIndex] = useState(0);
+
+  //game variables
   const [gameMission, setGameMission] = useState(null);
   const [isGameActive, setIsGameActive] = useState(false);
   const [mode, setMode] = useState('READ'); 
@@ -207,11 +214,38 @@ export function usePagerLogic() {
               setDecryptedText(result.decrypted_text);
               setFeedbackMessage(null);
           } else {
+              setDecryptedText(null); // Clear previous decryption text on failure
               setFeedbackMessage("DECRYPT FAILED");
           }
-      } catch (e) { setFeedbackMessage("SERVER ERROR"); }
+      } catch (e) { 
+        setDecryptedText(null);
+        setFeedbackMessage("SERVER ERROR"); 
+    }
       setTimeout(() => setFeedbackMessage(null), 3000);
   };
+
+  // --- LOGICĂ NOUĂ ȘI CORECTATĂ PENTRU BUTONUL AI ---
+  const handleAIDecrypt = async () => {
+    // 1. Dacă textul decriptat este afișat, o a doua apăsare a butonului AI îl ascunde.
+    if (decryptedText) {
+        setDecryptedText(null);
+        return;
+    }
+
+    // 2. Permitem decriptarea doar în modul READ și dacă nu există un mesaj de feedback activ.
+    if (mode !== 'READ' || feedbackMessage) return;
+
+    const currentMsg = messages[currentIndex]; // Mesajul afișat curent
+    
+    // 3. Verificăm dacă mesajul este un cod scurt (max 10 caractere)
+    if (currentMsg && currentMsg.length <= 10) {
+        await decryptMessage(currentMsg);
+    } else {
+        setFeedbackMessage("NOT A SHORT CODE");
+        setTimeout(() => setFeedbackMessage(null), 1500);
+    }
+  };
+
 
   // --- LOAD CONTACTS ---
   useEffect(() => {
@@ -246,7 +280,8 @@ export function usePagerLogic() {
     })();
   }, []);
 
-  // --- POLLING ---
+  // --- POLLING & AFISARE PERSISTENTA A MESAJELOR CORECTATA ---
+// --- POLLING ---
   useEffect(() => {
     const checkInboxAndGroups = async () => {
         if (!SERVER_URL.includes("ngrok") || !myPhoneNumber) return; 
@@ -257,21 +292,53 @@ export function usePagerLogic() {
                 body: JSON.stringify({ me: myPhoneNumber })
             });
             const data = await response.json();
+            
             if (data.has_messages) {
                 let hasNew = false;
-                data.messages.forEach(msg => {
-                    if (!messages.includes(msg) && msg !== "WELCOME") { 
-                        setMessages(prev => [...prev, msg]);
+                
+                data.messages.forEach(msgItem => {
+                    // 1. Extragem Textul și Expeditorul
+                    // Serverul poate trimite string simplu SAU obiect { text: "...", from: "..." }
+                    const msgText = typeof msgItem === 'object' ? msgItem.text : msgItem;
+                    const msgSender = typeof msgItem === 'object' ? (msgItem.from || msgItem.sender) : null;
+
+                    // 2. Verificăm dacă mesajul există deja în lista locală
+                    // Comparăm textul (sau ideal un ID dacă ai avea)
+                    const alreadyExists = messages.some(m => {
+                        const existingText = typeof m === 'object' ? m.text : m;
+                        return existingText === msgText;
+                    });
+
+                    if (!alreadyExists && msgText !== "WELCOME") { 
+                        // Adăugăm în lista de mesaje
+                        setMessages(prev => [...prev, msgText]);
                         hasNew = true;
-                        setNotificationData({ sender: "INCOMING", text: msg });
+
+                        // 3. Căutăm Numele în Agendă (Reverse Lookup)
+                        let displayName = "UNKNOWN";
+                        if (msgSender) {
+                            // contactsMap e de forma { "NUME": "07..." }
+                            // Căutăm Cheia (Numele) care are Valoarea (Numărul) egală cu msgSender
+                            const foundName = Object.keys(contactsMap).find(key => contactsMap[key] === msgSender);
+                            displayName = foundName || msgSender; // Dacă nu e în agendă, afișăm numărul
+                        } else {
+                            displayName = "INCOMING"; // Fallback dacă serverul nu trimite 'from'
+                        }
+
+                        // 4. Setăm Notificarea cu Numele Găsit
+                        setNotificationData({ sender: displayName, text: msgText });
+                        
+                        // Ascunde notificarea după 4 secunde
                         setTimeout(() => setNotificationData(null), 4000); 
                     }
                 });
+
                 if (hasNew) {
                     playBeep();
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
                     setFeedbackMessage(null); 
-                    setCurrentIndex(messages.length - 1); 
+                    // Setăm indexul la ultimul mesaj (mesajele noi se adaugă la final)
+                    setCurrentIndex(messages.length); 
                 }
             }
         } catch (e) { }
@@ -279,8 +346,7 @@ export function usePagerLogic() {
     };
     const intervalId = setInterval(checkInboxAndGroups, 3000); 
     return () => clearInterval(intervalId);
-  }, [messages, groups, myPhoneNumber]); 
-
+  }, [messages, groups, myPhoneNumber, contactsMap]); // 🔥 IMPORTANT: Am adăugat contactsMap la dependency array
   useEffect(() => {
     const interval = setInterval(() => setShowCursor((prev) => !prev), 500);
     return () => clearInterval(interval);
@@ -300,35 +366,51 @@ export function usePagerLogic() {
       );
   };
 
- const getCurrentGroupMembers = () => {
-      const g = groups.find(grp => grp.name === currentGroup);
-      return g ? g.members : [];
-  };
-  // 3. Logică Start Game (Folosită în handleButtonPress)
+const getCurrentGroupMembers = () => {
+    const g = groups.find(grp => grp.name === currentGroup);
+    if (!g) return [];
+
+    return g.members.map(memberPhone => {
+        // 1. Verificăm dacă e numărul meu
+        if (memberPhone === myPhoneNumber) {
+            return "ME"; 
+        }
+
+        // 2. Căutăm numărul în agenda de contacte (contactsMap: { NUME: TEL })
+        const contactName = Object.keys(contactsMap).find(key => contactsMap[key] === memberPhone);
+
+        // 3. Dacă am găsit numele, îl returnăm. Dacă nu, returnăm numărul simplu.
+        return contactName || memberPhone;
+    });
+};
+  // 3. Logică Start Game 
   const startGameWithGroup = async () => {
       setFeedbackMessage("CONTACTING HQ..."); 
       try {
-          const response = await fetch(`${SERVER_URL}/game/mission`, {
+          const members = getCurrentGroupMembers().filter(m => m !== 'ME'); // Excludem "ME" din lista de jucători
+          const response = await fetch(`${SERVER_URL}/game/start`, { 
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
-                  contact_name: currentGroup, 
-                  user_id: MY_ID
+                  group_name: currentGroup, 
+                  players: members, 
+                  user_id: myPhoneNumber 
               })
           });
           
           const data = await response.json();
-          if (data.mission) {
-              setGameMission(data.mission); 
+          if (response.ok) {
+              setGameMission(`GAME STARTED! Check inbox.`); 
               setIsGameActive(true);        
               setMode('GAME_VIEW');         
           } else {
-              setFeedbackMessage("HQ SILENT...");
+              setFeedbackMessage(`GAME ERROR: ${data.error || response.status}`);
           }
       } catch (e) {
           setFeedbackMessage("CONNECTION ERROR");
-          console.log(e);
+          console.log("GAME START ERROR:", e);
       }
+      setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
   const handleButtonPress = async (label) => { 
@@ -342,17 +424,13 @@ export function usePagerLogic() {
         setFeedbackMessage(null);
         if (label !== 'BTN_MENU') return; 
     }
-    if (decryptedText) {
+    
+    // LOGICĂ DECRIPTARE: Dacă textul decriptat este afișat, orice buton (inclusiv SEND) îl șterge.
+    if (decryptedText && label !== 'AI') { // AI e gestionat separat in handleAIDecrypt
         setDecryptedText(null);
         if (mode === 'READ') return; 
     }
-    if (mode === 'READ' && label === 'SEND') {
-        const currentMsg = messages[currentIndex];
-        if (currentMsg && currentMsg.length <= 10) {
-            await decryptMessage(currentMsg); 
-            return;
-        }
-    }
+    
     if ((mode === 'GROUP_TYPING' || mode === 'AI_PROMPT') && label !== 'SEND' && label !== 'BTN_MENU') return;
     
     if (mode === 'READ' && currentIndex === 0) {
@@ -379,7 +457,7 @@ export function usePagerLogic() {
         else if (mode === 'GROUP_MGMT_MENU') { setMode('GROUPS'); setCurrentGroup(null); }
         else if (mode === 'ADD_MEMBER_SELECTION') { setMode('GROUP_MGMT_MENU'); }
         else if (mode === 'GROUP_MEMBERS_VIEW') { setMode('GROUP_MGMT_MENU'); }
-        else if (mode === 'MENU') { setMode('READ'); setCurrentIndex(0); } 
+        else if (mode === 'MENU') { setMode('READ'); setCurrentIndex(messages.length > 0 ? messages.length - 1 : 0); } // Corectie: revine la ultimul mesaj
         else if (mode === 'READ' && currentIndex !== 0) { setCurrentIndex(0); }
         else { setMode('MENU'); setMenuIndex(0); }
         break;
@@ -396,9 +474,10 @@ export function usePagerLogic() {
         break;
 
       case 'DOWN':
-        if (mode === 'READ' && currentIndex === 0) return; 
+        if (mode === 'READ' && currentIndex === messages.length - 1) return; // Limita de jos in READ
         if (mode === 'MENU') setMenuIndex(prev => (prev < MENU_ITEMS.length - 1 ? prev + 1 : prev));
         else if (mode === 'MSG_MENU') setMessageMenuIndex(prev => (prev < MESSAGE_MENU_ITEMS.length - 1 ? prev + 1 : prev));
+        // Corectat: Max index pentru GROUP_MGMT_OPTIONS
         else if (mode === 'GROUP_MGMT_MENU') setGroupMgmtIndex(prev => (prev < GROUP_MGMT_OPTIONS.length - 1 ? prev + 1 : prev));
         else if (mode === 'SENT_HISTORY_VIEW') setHistoryIndex(prev => (prev < sentHistory.length - 1 ? prev + 1 : prev));
         else if (mode === 'ADD_MEMBER_SELECTION') setAddMemberIndex(prev => (prev < contacts.length - 1 ? prev + 1 : prev));
@@ -505,7 +584,7 @@ export function usePagerLogic() {
                 await startGameWithGroup();
             }
         } else if (mode === 'ADD_MEMBER_SELECTION') {
-             const memberToAddName = contacts[addMemberIndex];
+             const memberToAddName = contactsForSelectionFinal[addMemberIndex]; // Folosim lista filtrata
              addMemberOnServer(currentGroup, memberToAddName);
              setFeedbackMessage(`${memberToAddName} ADDED!`);
              setMode('GROUP_MGMT_MENU');
@@ -561,10 +640,23 @@ export function usePagerLogic() {
     }
   };
 
-  const contactsForSelectionFinal = contacts.filter(contactName => {
+  // Logica de filtrare a contactelor
+  const contactsForSelectionBase = contacts.filter(contactName => {
+      if (searchTerm.length > 0) {
+          return contactName.includes(searchTerm.toUpperCase());
+      }
+      return true;
+  });
+
+  const contactsForSelectionFinal = contactsForSelectionBase.filter(contactName => {
       const groupMembers = groups.find(g => g.name === currentGroup)?.members;
       const contactPhone = contactsMap[contactName];
-      return currentGroup && groupMembers && contactPhone && !groupMembers.includes(contactPhone);
+      // Doar pentru ADD MEMBER, filtrăm membrii existenți
+      if (mode === 'ADD_MEMBER_SELECTION') {
+          // Filtrăm membrii care nu sunt deja în grup SAU nu au număr de telefon valid
+          return currentGroup && contactPhone && !groupMembers.includes(contactPhone);
+      }
+      return true;
   });
   
   let displayText;
@@ -633,7 +725,10 @@ export function usePagerLogic() {
     displayText,
     decryptMessage,
     decryptedText,
-    showCursor: !mode.includes('TYPING') && mode !== 'MSG_MENU' && mode !== 'GROUP_MGMT_MENU' && mode !== 'ADD_MEMBER_SELECTION' && mode !== 'GROUP_MEMBERS_VIEW', 
+    // EXPUS: Noua funcție de decriptare
+    handleAIDecrypt,
+    // Am inclus GAME_VIEW în condiția de afișare a cursorului
+    showCursor: !mode.includes('TYPING') && mode !== 'MSG_MENU' && mode !== 'GROUP_MGMT_MENU' && mode !== 'ADD_MEMBER_SELECTION' && mode !== 'GROUP_MEMBERS_VIEW' && mode !== 'GAME_VIEW', 
     handleButtonPress,
     currentIndex: currentDisplayIndex,
     totalMessages: totalItems,
@@ -651,6 +746,8 @@ export function usePagerLogic() {
     addMemberIndex,
     sentHistory, historyIndex, feedbackMessage,
     newGroupName, setNewGroupName, aiPrompt, setAiPrompt,
+    // EXPUS: Stările de căutare
+    searchTerm, setSearchTerm, searchIndex, contactsForSelectionBase: contactsForSelectionBase, 
     MAX_GROUP_LENGTH, MAX_AI_PROMPT_LENGTH, notificationData,
     currentGroupMembers: getCurrentGroupMembers(),
     groupMemberViewIndex,

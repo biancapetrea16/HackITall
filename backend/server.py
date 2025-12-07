@@ -3,7 +3,6 @@ from flask_cors import CORS
 from datetime import datetime
 import random
 from collections import deque 
-import random 
 
 app = Flask(__name__)
 CORS(app)
@@ -12,6 +11,10 @@ CORS(app)
 
 # Stocăm mesajele care așteaptă să fie preluate de un destinatar (ID-ul = cheia)
 messages_queue = {}
+
+# Stocăm grupurile și membrii lor
+# Structura: { "NUME_GRUP": ["0712345678", "0787654321"] }
+groups_db = {}
 
 # Stările jocurilor active pe grup (Cheia = Numele Grupului)
 game_states = {}
@@ -25,9 +28,8 @@ WORD_SETS = [
     {"A": "OCEAN", "B": "LAC"}
 ]
 
-# 🚨 NOU: TABELUL DE CRIPTARE AI (SIMULARE)
+# 🚨 TABELUL DE CRIPTARE AI (SIMULARE)
 AI_ENCRYPTION_TABLE = {
-    # Mesaj lung : Cod scurt (Max 10 chars)
     "CE MAI FACI?": "333WSUP",
     "AM NEVOIE SA VORBIM URGENT DESPRE HACKATHON.": "504CALLNOW",
     "M-AM INDRAGOSTIT DE JOCUL ASTA!": "143ILY",
@@ -44,7 +46,82 @@ def _send_private_message(recipient_id, message, sender="GAME MASTER"):
     print(f"   [MSG-PRIVATE] Trimis '{message[:15]}...' către {recipient_id}")
 
 
-# --- 1. RUTE DE MESAGERIE DE BAZĂ (SEND & CHECK) ---
+# ==========================================
+# 1. RUTE NOI PENTRU MANAGEMENTUL GRUPURILOR
+# ==========================================
+
+@app.route('/groups/create', methods=['POST'])
+def create_group_route():
+    data = request.json
+    group_name = data.get('group_name', '').upper()
+    creator_id = data.get('creator_id')
+
+    if not group_name or not creator_id:
+        return jsonify({"error": "Missing name or creator"}), 400
+
+    # Dacă grupul nu există, îl creăm și adăugăm creatorul
+    if group_name not in groups_db:
+        groups_db[group_name] = [creator_id]
+        print(f"📁 GRUP NOU CREAT: {group_name} de către {creator_id}")
+    else:
+        # Dacă există deja (poate a fost șters local), ne asigurăm că creatorul e în listă
+        if creator_id not in groups_db[group_name]:
+            groups_db[group_name].append(creator_id)
+
+    return jsonify({
+        "message": "Group created", 
+        "group": {"name": group_name, "members": groups_db[group_name]}
+    }), 200
+
+
+@app.route('/groups/add-member', methods=['POST'])
+def add_member_route():
+    data = request.json
+    group_name = data.get('group_name')
+    new_member_id = data.get('new_member_id')
+
+    if not group_name or not new_member_id:
+        return jsonify({"error": "Missing data"}), 400
+
+    if group_name in groups_db:
+        # Adăugăm membrul doar dacă nu e deja în listă
+        if new_member_id not in groups_db[group_name]:
+            groups_db[group_name].append(new_member_id)
+            print(f"➕ MEMBRU ADĂUGAT: {new_member_id} în {group_name}")
+            
+            # Îi trimitem o notificare noului membru ca să știe că a fost adăugat
+            _send_private_message(new_member_id, f"YOU WERE ADDED TO GROUP: {group_name}", sender="SYSTEM")
+            
+            return jsonify({"message": "Member added", "members": groups_db[group_name]}), 200
+        else:
+            return jsonify({"message": "Member already exists"}), 200
+    
+    return jsonify({"error": "Group not found"}), 404
+
+
+@app.route('/groups/my-groups', methods=['POST'])
+def get_my_groups_route():
+    data = request.json
+    user_id = data.get('user_id') # Telefonul celui care cere lista
+
+    if not user_id:
+        return jsonify({"groups": []})
+
+    # Căutăm în baza de date toate grupurile unde apare acest număr de telefon
+    my_groups_list = []
+    for name, members in groups_db.items():
+        if user_id in members:
+            my_groups_list.append({"name": name, "members": members})
+
+    # (Opțional) Debugging ca să vezi în consolă când cere telefonul lista
+    # print(f"🔍 {user_id} sync groups. Found: {len(my_groups_list)}")
+    
+    return jsonify({"groups": my_groups_list}), 200
+
+
+# ==========================================
+# 2. RUTE DE MESAGERIE DE BAZĂ (SEND & CHECK)
+# ==========================================
 
 @app.route('/send', methods=['POST'])
 def send_message_to_recipient():
@@ -94,16 +171,26 @@ def check_inbox():
     return jsonify(response)
 
 
-# --- 2. RUTE PENTRU JOCUL "CAMELEONUL SECRET" ---
+# ==========================================
+# 3. RUTE PENTRU JOCUL "CAMELEONUL SECRET"
+# ==========================================
 
 @app.route('/game/start', methods=['POST'])
 def start_game():
     data = request.json
     group_name = data.get('group_name')
-    players = data.get('players') 
+    # Încercăm să luăm jucătorii din request, dacă nu, îi luăm din baza de date a grupurilor
+    players_request = data.get('players') 
+    
+    if players_request:
+        players = players_request
+    elif group_name in groups_db:
+        players = groups_db[group_name]
+    else:
+        players = []
 
     if not group_name or len(players) < 3:
-        return jsonify({"error": "Need at least 3 players to start"}), 400
+        return jsonify({"error": "Need at least 3 players to start (Make sure you added them via Add People)"}), 400
     
     if group_name in game_states and game_states[group_name]['status'] == 'active':
         return jsonify({"error": "Game already active in this group"}), 400
@@ -174,7 +261,6 @@ def submit_clue():
 
 @app.route('/game/guess', methods=['POST'])
 def submit_guess():
-    # ... (Logica de ghicire rămâne la fel) ...
     data = request.json
     group_name = data.get('group_name')
     sender_id = data.get('sender_id')
@@ -200,7 +286,9 @@ def submit_guess():
     return jsonify({"error": "Only the Impostor can submit a guess here."}), 400
 
 
-# --- 3. RUTE PENTRU CRIPTAREA/DECRIPTAREA AI ---
+# ==========================================
+# 4. RUTE PENTRU CRIPTAREA/DECRIPTAREA AI
+# ==========================================
 
 @app.route('/ai/encrypt', methods=['POST'])
 def ai_encrypt():
@@ -215,14 +303,11 @@ def ai_encrypt():
             break
             
     if not encrypted_code:
-        # Dacă nu găsim cod, luăm primele 10 caractere, capitalizate, + codul 411
-        # Asigurăm max 10 caractere în total
         base_code = long_message[:7].upper()
         encrypted_code = base_code.ljust(7, '#') + "411"
-        encrypted_code = encrypted_code[:10] # Siguranță: Max 10 chars
+        encrypted_code = encrypted_code[:10]
     
-    # Salvăm perechea pentru decriptare inversă (dacă nu era deja în tabel)
-    if long_message not in AI_ENCRYPTION_TABLE and len(long_message) < 50: # Evităm mesaje spam
+    if long_message not in AI_ENCRYPTION_TABLE and len(long_message) < 50:
         AI_ENCRYPTION_TABLE[long_message] = encrypted_code
     
     print(f"🤖 AI ENCRYPT: '{long_message[:15]}...' -> {encrypted_code}")
@@ -233,10 +318,7 @@ def ai_decrypt():
     data = request.json
     encrypted_code = data.get('code', '').upper()
     
-    # Simulare decriptare: căutăm codul scurt în valorile tabelului
     decrypted_text = None
-    
-    # Caută codul în valorile tabelului (inversare)
     for long_msg, code in AI_ENCRYPTION_TABLE.items():
         if code == encrypted_code:
             decrypted_text = long_msg
@@ -253,11 +335,12 @@ def ai_decrypt():
 
 @app.route('/reset_game', methods=['POST'])
 def reset_db():
-    global messages_queue, game_states
+    global messages_queue, game_states, groups_db
     messages_queue = {}
     game_states = {}
-    print("🗑️ Database and Game States cleared.")
-    return jsonify({"message": "Database and Game States cleared"}), 200
+    groups_db = {}
+    print("🗑️ Database, Groups, and Game States cleared.")
+    return jsonify({"message": "Database cleared"}), 200
 
 
 @app.route('/game/mission', methods=['POST'])
@@ -273,7 +356,8 @@ def generate_mission():
     ]
     
     return jsonify({"mission": random.choice(missions)})
+
 if __name__ == '__main__':
-    print("🎮 Server Cameleonul Secret pornit pe portul 5002...")
+    print("🎮 Server Pager (cu Sync Grupuri) pornit pe portul 5002...")
     messages_queue['TEST'] = [{"text": "SERVER UP!", "sender": "SYSTEM"}]
     app.run(host='0.0.0.0', port=5002, debug=True)

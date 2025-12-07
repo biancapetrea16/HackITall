@@ -68,7 +68,10 @@ export default function RetroPagerUI() {
     contactsForSelection, addMemberIndex,
     currentGroupMembers, groupMemberViewIndex,
     isLogged, loginUser,
-    visibleGroupOptions
+    visibleGroupOptions,
+    // 🚨 MODIFICAT: Extragem funcția de decriptare AI și textul decriptat
+    handleAIDecrypt,
+    decryptedText
   } = usePagerLogic();
 
   const [inputPhone, setInputPhone] = useState('');
@@ -256,8 +259,14 @@ export default function RetroPagerUI() {
                 <Text style={styles.modelText}>ADVISOR {currentTheme}</Text>
               </View>
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
-                  <TouchableOpacity style={[styles.aiButton, {borderColor: theme.branding, backgroundColor: currentTheme==='LIGHT'?'#000':'#FFD700'}]} onPress={() => alert("AI Magic!")} activeOpacity={0.6}>
-                     <Text style={[styles.aiButtonText, {color: currentTheme==='LIGHT'?'#fff':'#000'}]}>AI ✨</Text>
+                  <TouchableOpacity 
+                      style={[styles.aiButton, {borderColor: theme.branding, backgroundColor: currentTheme==='LIGHT'?'#000':'#FFD700'}]} 
+                      onPress={handleAIDecrypt} // 🚨 CONECTAT AICI
+                      activeOpacity={0.6}
+                  >
+                     <Text style={[styles.aiButtonText, {color: currentTheme==='LIGHT'?'#fff':'#000'}]}>
+                        AI {decryptedText ? '🔓' : '✨'} {/* Arată lacăt deschis când e decriptat */}
+                     </Text>
                   </TouchableOpacity>
                   <View style={[styles.ledLight, { backgroundColor: isTransmitting ? '#ff3333' : '#330000', borderColor: theme.branding }]}>
                      {isTransmitting && <View style={styles.ledGlow} />}
@@ -330,7 +339,7 @@ export default function RetroPagerUI() {
                             <Text style={[styles.pixelText, { color: theme.textReal, textShadowColor: theme.textReal, textShadowRadius: currentTheme === 'CLASSIC' || currentTheme === 'DARK' ? 8 : 0 }]}>
                                 {isSelectionMode && <Text style={{fontSize: 30}}>To: </Text>}
                                 {displayText}
-                                {(!isFeedbackMode && !isTransmitting) && <Text style={{ opacity: showCursor ? 1 : 0 }}>_</Text>}
+                                {(!isFeedbackMode && !isTransmitting && !decryptedText) && <Text style={{ opacity: showCursor ? 1 : 0 }}>_</Text>}
                             </Text>
                           </>
                       )}
