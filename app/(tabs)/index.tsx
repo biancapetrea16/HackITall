@@ -8,7 +8,6 @@ import { usePagerLogic } from '../../hooks/usePagerLogic';
 
 const { width, height } = Dimensions.get('window');
 
-// --- HOOK PENTRU PÂLPÂIT NEON ---
 function useNeonFlicker() {
   const [opacity, setOpacity] = useState(1);
   useEffect(() => {
@@ -24,7 +23,6 @@ function useNeonFlicker() {
   return opacity;
 }
 
-// --- CONFIGURAREA CELOR 4 TEME ---
 const THEMES = {
   CLASSIC: { 
     body: '#111', bodyBorder: '#333', bezel: '#000', screen: '#0f1f0f', 
@@ -68,6 +66,8 @@ export default function RetroPagerUI() {
     notificationData,
     groupMgmtOptions, groupMgmtIndex,
     contactsForSelection, addMemberIndex,
+    // 1. IMPORT AICI:
+    currentGroupMembers, groupMemberViewIndex
   } = usePagerLogic();
 
   const flickerOpacity = useNeonFlicker();
@@ -80,7 +80,6 @@ export default function RetroPagerUI() {
 
   if (!fontsLoaded) return <View style={styles.loading}><Text>Loading...</Text></View>;
 
-  // --- ECRAN INTRO (Dacă currentTheme nu e setat, arătăm meniul de teme) ---
   if (!currentTheme) {
       return (
           <View style={styles.mainContainer}>
@@ -118,14 +117,10 @@ export default function RetroPagerUI() {
           </View>
       );
   }
-
-  // --- ECRAN PAGER (Dacă currentTheme este setat) ---
   
   const theme = THEMES[currentTheme]; 
   
-  // 🚨 CLAUZĂ DE SIGURANȚĂ (GUARD CLAUSE) FIX (Eroarea de la linia 133)
   if (!theme) {
-      // Dacă se întâmplă o eroare de reload (currentTheme e corupt), revenim la intro.
       setCurrentTheme(null);
       return <View style={styles.loading}><Text style={{color: 'red'}}>ERROR: Resetting Theme...</Text></View>;
   }
@@ -136,6 +131,9 @@ export default function RetroPagerUI() {
   const isHistoryMode = mode === 'SENT_HISTORY_VIEW';
   const isGroupMgmtMode = mode === 'GROUP_MGMT_MENU';
   const isAddMemberMode = mode === 'ADD_MEMBER_SELECTION';
+  // 2. MODIFICARE AICI: Definim noul mod vizual
+  const isGroupMembersViewMode = mode === 'GROUP_MEMBERS_VIEW';
+
   const isTypingMode = mode === 'GROUP_TYPING' || mode === 'AI_PROMPT';
   const isSelectionMode = mode === 'CONTACTS' || mode === 'GROUPS';
   const isFeedbackMode = totalMessages === -1; 
@@ -162,9 +160,15 @@ export default function RetroPagerUI() {
       currentSelectionIndex = historyIndex;
       headerText = 'SENT HISTORY';
   } else if (isAddMemberMode) {
-      currentList = contactsForSelection;
+      currentList = contactsForSelection || [];
       currentSelectionIndex = addMemberIndex;
       headerText = 'ADD MEMBER';
+  } 
+  // 3. MODIFICARE AICI: Logică pentru lista de membri
+  else if (isGroupMembersViewMode) {
+      currentList = currentGroupMembers || [];
+      currentSelectionIndex = groupMemberViewIndex;
+      headerText = 'MEMBERS LIST';
   }
 
 
@@ -199,7 +203,6 @@ export default function RetroPagerUI() {
           borderWidth: currentTheme === 'LIGHT' ? 4 : 2, shadowColor: theme.neonColor
       }]}>
         
-        {/* --- POP-UP NOTIFICARE --- */}
         {notificationData && (
              <View style={[styles.notificationPopup, {borderColor: theme.neonColor, backgroundColor: theme.body}]}>
                  <Text style={[styles.notificationTitle, {color: theme.neonColor}]}>*** NEW MESSAGE ***</Text>
@@ -229,7 +232,6 @@ export default function RetroPagerUI() {
                     
                     <View style={styles.textContainer}>
                       {isTypingMode ? (
-                        // MODUL DE TASTARE INPUT NATIV
                         <View style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
                             <Text style={[styles.pixelText, {color: theme.textReal, fontSize: 18, lineHeight: 20, position: 'relative', top: -30}]}>
                                 {mode === 'GROUP_TYPING' ? `ENTER GROUP NAME (MAX ${MAX_GROUP_LENGTH}):` : `ENTER AI PROMPT (MAX ${MAX_AI_PROMPT_LENGTH}):`}
@@ -249,25 +251,33 @@ export default function RetroPagerUI() {
                                 {maxInputLength - currentInput.length} chars left
                             </Text>
                         </View>
-                      ) : isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? (
-                          // MODUL DE MENIU LISTĂ SAU ISTORIC SAU ADĂUGARE MEMBRU
-                          <View style={{flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', height: '100%', paddingLeft: 10}}>
-                              {currentList.map((item, idx) => (
-                                  <Text key={idx} style={{ 
-                                      fontFamily: 'VT323_400Regular', 
-                                      fontSize: isHistoryMode ? 18 : 22, 
-                                      lineHeight: isHistoryMode ? 20 : 24, 
-                                      position: 'relative', 
-                                      color: idx === currentSelectionIndex ? theme.textReal : theme.branding,
-                                      opacity: idx === currentSelectionIndex ? 1 : 0.5,
-                                      textShadowColor: idx === currentSelectionIndex ? theme.textReal : 'transparent', textShadowRadius: 5
-                                  }}>
-                                      {idx === currentSelectionIndex ? "> " : "  "}{item}
-                                  </Text>
-                              ))}
+                        
+                      // 4. MODIFICARE AICI: Am adăugat `|| isGroupMembersViewMode` pentru a folosi randarea de listă
+                      ) : isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? (
+                          
+                          <View style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', height: '100%', paddingLeft: 10, paddingTop: 5}}>
+                              {currentList.slice(
+                                  Math.max(0, currentSelectionIndex - 2), 
+                                  Math.max(0, currentSelectionIndex - 2) + 5
+                              ).map((item, idx) => {
+                                  const realIndex = Math.max(0, currentSelectionIndex - 2) + idx;
+                                  return (
+                                    <Text key={realIndex} style={{ 
+                                        fontFamily: 'VT323_400Regular', 
+                                        fontSize: isHistoryMode ? 18 : 22, 
+                                        lineHeight: isHistoryMode ? 20 : 24, 
+                                        position: 'relative', 
+                                        color: realIndex === currentSelectionIndex ? theme.textReal : theme.branding,
+                                        opacity: realIndex === currentSelectionIndex ? 1 : 0.5,
+                                        textShadowColor: realIndex === currentSelectionIndex ? theme.textReal : 'transparent', textShadowRadius: 5
+                                    }}>
+                                        {realIndex === currentSelectionIndex ? "> " : "  "}{item}
+                                    </Text>
+                                  );
+                              })}
                           </View>
+
                       ) : (
-                          // MODUL STANDARD (MESAJE/FEEDBACK)
                           <>
                             <Text style={[styles.pixelText, { color: theme.textGhost }]}>88888888888888</Text>
                             <Text style={[styles.pixelText, { color: theme.textReal, textShadowColor: theme.textReal, textShadowRadius: currentTheme === 'CLASSIC' || currentTheme === 'DARK' ? 8 : 0 }]}>
@@ -294,7 +304,7 @@ export default function RetroPagerUI() {
         <View style={styles.middleDeco}>
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
             <Text style={[styles.instructionText, { color: theme.branding }]}>
-               {isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? 'NAVIGATE' : isTypingMode ? 'PRESS OK TO SAVE' : isFeedbackMode ? 'SENT' : '1-WAY PAGING'}
+               {isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'NAVIGATE' : isTypingMode ? 'PRESS OK TO SAVE' : isFeedbackMode ? 'SENT' : '1-WAY PAGING'}
             </Text>
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
         </View>
@@ -306,7 +316,7 @@ export default function RetroPagerUI() {
             onPress={() => handleButtonPress('BTN_MENU')} 
             activeOpacity={0.6}>
             <View style={styles.buttonInset} />
-            <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT'?'#000':'#FFF'}]}>{isMenuMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? 'BACK' : 'MENU'}</Text>
+            <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT'?'#000':'#FFF'}]}>{isMenuMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'BACK' : 'MENU'}</Text>
           </TouchableOpacity>
           
           <View style={styles.arrowsContainer}>
@@ -320,12 +330,12 @@ export default function RetroPagerUI() {
           </View>
           
           <TouchableOpacity 
-            style={[styles.bigButton, { backgroundColor: (isMenuMode || isSelectionMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode) ? theme.buttonAction : theme.button, borderColor: theme.buttonBorder }]} 
+            style={[styles.bigButton, { backgroundColor: (isMenuMode || isSelectionMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode) ? theme.buttonAction : theme.button, borderColor: theme.buttonBorder }]} 
             onPress={() => handleButtonPress('SEND')} 
             activeOpacity={0.6}>
             <View style={styles.buttonInset} />
             <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT' && !isMenuMode && !isSelectionMode ? '#000' : '#FFF'}]}>
-                {isTypingMode || isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode ? 'SELECT' : isSelectionMode ? 'OK' : 'SEND'}
+                {isTypingMode || isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'SELECT' : isSelectionMode ? 'OK' : 'SEND'}
             </Text>
           </TouchableOpacity>
         </View>

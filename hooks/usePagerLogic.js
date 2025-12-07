@@ -1,9 +1,10 @@
+import { Audio } from 'expo-av';
 import * as Contacts from 'expo-contacts';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import pagerMessages from '../app/(tabs)/data';
 
-// CONFIGURARE
+// --- CONFIGURARE ---
 const MY_ID = "AAA"; 
 const SERVER_URL = "https://unrefunded-asteriated-jairo.ngrok-free.dev"; 
 const MAX_GROUP_LENGTH = 10;
@@ -11,7 +12,6 @@ const MAX_AI_PROMPT_LENGTH = 120;
 
 const MENU_ITEMS = ["CONTACTS", "GROUPS", "CREATE GROUP"];
 const MESSAGE_MENU_ITEMS = ["CUSTOM AI PROMPT", "SENT HISTORY"];
-const SENT_HISTORY_MESSAGES = ["HELLO!", "RUNNING LATE", "NEED HELP ASAP", "WHERE ARE YOU?"];
 const GROUP_MGMT_OPTIONS = ["ADD PEOPLE", "SEND MESSAGE"];
 
 
@@ -21,16 +21,18 @@ export function usePagerLogic() {
   const [messages, setMessages] = useState(["WELCOME", ...initialMessages]);
   
   const [contacts, setContacts] = useState(["LOADING..."]);
-  const [groups, setGroups] = useState([]);
-  const [sentHistory, setSentHistory] = useState(SENT_HISTORY_MESSAGES);
+  const [groups, setGroups] = useState([]); // [{name: string, members: string[]}]
+  const [sentHistory, setSentHistory] = useState(["HELLO!", "RUNNING LATE", "NEED HELP ASAP", "WHERE ARE YOU?"]);
   
   const [newGroupName, setNewGroupName] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
   const [targetRecipient, setTargetRecipient] = useState(null);
   
   const [currentGroup, setCurrentGroup] = useState(null);
-  
   const [notificationData, setNotificationData] = useState(null);
+  
+  const [decryptedText, setDecryptedText] = useState(null); // Text decriptat
+  
 
   const [currentTheme, setCurrentTheme] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0); 
@@ -45,17 +47,16 @@ export function usePagerLogic() {
   const [feedbackMessage, setFeedbackMessage] = useState(null);
 
   const [mode, setMode] = useState('READ'); 
+  
+  // --- ASSET SOUND (Mutat static pentru a evita erorile de path) ---
+  const BEEP_SOUND_ASSET = require('../assets/images/beep.mp3');
 
-    // --- 2. FUNCȚIA DE SUNET ---
+  // --- FUNCȚIA DE SUNET ---
   async function playBeep() {
     try {
-      // Creează și încarcă sunetul din assets
-      const { sound } = await Audio.Sound.createAsync(
-         require('../assets/beep.mp3') 
-      );
+      const { sound } = await Audio.Sound.createAsync( BEEP_SOUND_ASSET );
       await sound.playAsync();
       
-      // Eliberăm memoria după ce termină
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.didJustFinish) {
           sound.unloadAsync();
@@ -76,6 +77,31 @@ export function usePagerLogic() {
           console.log("FETCH ERROR:", e);
           setFeedbackMessage("FETCH ERR! CHECK URL!");
       });
+  };
+
+  // 🚨 FUNCȚIE DE DECRYPTARE
+  const decryptMessage = async (encryptedCode) => {
+      setFeedbackMessage("DECRYPTING...");
+      
+      try {
+          const response = await fetch(`${SERVER_URL}/ai/decrypt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code: encryptedCode })
+          });
+          const result = await response.json();
+          
+          if (result.decrypted_text) {
+              setDecryptedText(result.decrypted_text);
+              setFeedbackMessage(null);
+          } else {
+              setFeedbackMessage("DECRYPT FAILED: Code not recognized.");
+          }
+
+      } catch (e) {
+          setFeedbackMessage("DECRYPT FAILED: Server error.");
+      }
+      setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
 
@@ -164,7 +190,8 @@ export function usePagerLogic() {
   };
 
 
-  const handleButtonPress = (label) => {
+  // 🚨 FUNCȚIA PRINCIPALĂ DE GESTIONARE A BUTOANELOR ESTE ASYNC
+  const handleButtonPress = async (label) => { 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isSending) return;
 
@@ -173,6 +200,24 @@ export function usePagerLogic() {
         setFeedbackMessage(null);
         if (label !== 'BTN_MENU') return; 
     }
+    
+    // NOU: Dacă textul decriptat este afișat, BACK/MENU/SEND îl șterge
+    if (decryptedText) {
+        setDecryptedText(null);
+        // Dacă suntem în modul READ și decriptăm, ne oprim aici
+        if (mode === 'READ') return; 
+    }
+    
+    // NOU: Decriptare la apăsarea SEND în modul READ
+    if (mode === 'READ' && label === 'SEND') {
+        const currentMsg = messages[currentIndex];
+        // Presupunem că orice mesaj de max 10 caractere e un cod criptat
+        if (currentMsg && currentMsg.length <= 10) {
+            await decryptMessage(currentMsg); 
+            return;
+        }
+    }
+
 
     if ((mode === 'GROUP_TYPING' || mode === 'AI_PROMPT') && label !== 'SEND' && label !== 'BTN_MENU') return;
     
@@ -189,31 +234,13 @@ export function usePagerLogic() {
             setNewGroupName(''); 
             setAiPrompt('');
         }
-        else if (mode === 'SENT_HISTORY_VIEW') {
-            setMode('MSG_MENU');
-        }
-        else if (mode === 'MSG_MENU') {
-            setMode(targetRecipient.mode); 
-            setTargetRecipient(null);
-        }
-        else if (mode === 'GROUP_MGMT_MENU') { 
-             setMode('GROUPS');
-             setCurrentGroup(null);
-        }
-        else if (mode === 'ADD_MEMBER_SELECTION') { 
-             setMode('GROUP_MGMT_MENU');
-        }
-        else if (mode === 'MENU') {
-            setMode('READ'); 
-            setCurrentIndex(0);
-        } 
-        else if (mode === 'READ' && currentIndex !== 0) { 
-             setCurrentIndex(0);
-        }
-        else { 
-            setMode('MENU');
-            setMenuIndex(0);
-        }
+        else if (mode === 'SENT_HISTORY_VIEW') { setMode('MSG_MENU'); }
+        else if (mode === 'MSG_MENU') { setMode(targetRecipient.mode); setTargetRecipient(null); }
+        else if (mode === 'GROUP_MGMT_MENU') { setMode('GROUPS'); setCurrentGroup(null); }
+        else if (mode === 'ADD_MEMBER_SELECTION') { setMode('GROUP_MGMT_MENU'); }
+        else if (mode === 'MENU') { setMode('READ'); setCurrentIndex(0); } 
+        else if (mode === 'READ' && currentIndex !== 0) { setCurrentIndex(0); }
+        else { setMode('MENU'); setMenuIndex(0); }
         break;
 
       case 'UP':
@@ -223,9 +250,7 @@ export function usePagerLogic() {
         else if (mode === 'SENT_HISTORY_VIEW') setHistoryIndex(prev => (prev > 0 ? prev - 1 : 0));
         else if (mode === 'ADD_MEMBER_SELECTION') setAddMemberIndex(prev => (prev > 0 ? prev - 1 : 0));
         else if (mode === 'READ') setCurrentIndex(prev => (prev > 0 ? prev - 1 : 0));
-        else { // CONTACTS / GROUPS
-             setCurrentIndex(prev => (prev > 0 ? prev - 1 : 0));
-        }
+        else { setCurrentIndex(prev => (prev > 0 ? prev - 1 : 0)); }
         break;
 
       case 'DOWN':
@@ -235,7 +260,7 @@ export function usePagerLogic() {
         else if (mode === 'GROUP_MGMT_MENU') setGroupMgmtIndex(prev => (prev < GROUP_MGMT_OPTIONS.length - 1 ? prev + 1 : prev));
         else if (mode === 'SENT_HISTORY_VIEW') setHistoryIndex(prev => (prev < SENT_HISTORY_MESSAGES.length - 1 ? prev + 1 : prev));
         else if (mode === 'ADD_MEMBER_SELECTION') setAddMemberIndex(prev => (prev < contactsForSelectionFinal.length - 1 ? prev + 1 : prev));
-        else { // READ / CONTACTS / GROUPS
+        else { 
             const currentList = mode === 'READ' ? messages : (mode === 'GROUPS' ? groups : contacts);
             let maxIndex = currentList.length - 1;
             setCurrentIndex(prev => (prev < maxIndex ? prev + 1 : maxIndex));
@@ -255,20 +280,39 @@ export function usePagerLogic() {
             return;
         }
 
-        // CAZUL B: SUBMIT AI PROMPT (TRIMITE)
+        // 🚨 CAZUL B: SUBMIT AI PROMPT (CRIPTAT)
         if (mode === 'AI_PROMPT') {
             if (aiPrompt.trim().length === 0) { setFeedbackMessage("PROMPT REQUIRED"); return; }
-            setFeedbackMessage(`AI PROMPT SENT to ${targetRecipient.name}`);
-            setSentHistory(prev => [...prev, aiPrompt.toUpperCase()]); 
+            setFeedbackMessage("ENCRYPTING..."); 
             
-            // 🎯 FOLOSIM NOUA FUNCȚIE
-            sendDataToServer({ 
-                to: targetRecipient.name, 
-                text: aiPrompt,
-                type: 'AI_PROMPT', 
-                from: MY_ID
-            });
+            try {
+                const aiResponse = await fetch(`${SERVER_URL}/ai/encrypt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ long_message: aiPrompt, sender: MY_ID })
+                });
+                const result = await aiResponse.json();
+                
+                const finalCode = result.encrypted_code; 
+                
+                if (!finalCode) {
+                    setFeedbackMessage("ENCRYPT FAILED!");
+                    setTimeout(() => setFeedbackMessage(null), 3000);
+                    return;
+                }
+                
+                sendDataToServer({ 
+                    to: targetRecipient.name, 
+                    text: finalCode, 
+                    type: 'ENCRYPTED', 
+                    from: MY_ID
+                });
+                setFeedbackMessage(`SENT: ${finalCode} to ${targetRecipient.name}`);
 
+            } catch(e) {
+                 setFeedbackMessage("AI SERVER ERROR!");
+            }
+            
             setAiPrompt('');
             setTargetRecipient(null);
             setMode('READ');
@@ -319,7 +363,6 @@ export function usePagerLogic() {
         else if (mode === 'SENT_HISTORY_VIEW') {
             const messageToSend = sentHistory[historyIndex];
             
-            // 🎯 FOLOSIM NOUA FUNCȚIE
             sendDataToServer({ 
                 to: targetRecipient.name, 
                 text: messageToSend,
@@ -353,7 +396,7 @@ export function usePagerLogic() {
             setGroupMgmtIndex(0);
         }
         
-        // CAZUL I: APĂSARE OK DIN MODUL READ 
+        // CAZUL I: APĂSARE OK DIN MODUL READ (Dacă nu e cod criptat, afișează menu)
         else if (mode === 'READ') {
             setFeedbackMessage("PRESS MENU TO START");
             setTimeout(() => setFeedbackMessage(null), 1500); 
@@ -366,9 +409,8 @@ export function usePagerLogic() {
   };
 
 
-  // --- CALCUL LOGICĂ AFIȘARE (Mutat în față pentru a fi definit) ---
+  // --- CALCUL LOGICĂ AFIȘARE ---
   
-  // Lista de contacte filtrată pentru adăugare (Exclude membrii existenți)
   const contactsForSelectionFinal = contacts.filter(contact => {
       const groupMembers = groups.find(g => g.name === currentGroup)?.members;
       return currentGroup && groupMembers && !groupMembers.includes(contact);
@@ -379,11 +421,17 @@ export function usePagerLogic() {
   let currentListLength = 0;
   let currentDisplayIndex = 0;
 
-  if (isSending) { displayText = "SENDING..."; } 
-  else if (feedbackMessage) { displayText = feedbackMessage; }
-  else if (mode === 'GROUP_TYPING') { displayText = 'Type Group Name...'; } 
-  else if (mode === 'AI_PROMPT') { displayText = 'Type AI Prompt...'; } 
-  else if (mode === 'CONTACTS') { 
+  if (decryptedText) { // NOU: Prioritate decriptării
+      displayText = decryptedText;
+  } else if (isSending) { 
+      displayText = "SENDING..."; 
+  } else if (feedbackMessage) { 
+      displayText = feedbackMessage; 
+  } else if (mode === 'GROUP_TYPING') { 
+      displayText = 'Type Group Name...'; 
+  } else if (mode === 'AI_PROMPT') { 
+      displayText = 'Type Long Message...'; 
+  } else if (mode === 'CONTACTS') { 
       displayText = contacts[currentIndex] || "EMPTY"; 
       currentListLength = contacts.length;
       currentDisplayIndex = currentIndex;
@@ -416,6 +464,8 @@ export function usePagerLogic() {
 
   return {
     displayText,
+    decryptMessage,
+    decryptedText,
     showCursor: !mode.includes('TYPING') && mode !== 'MSG_MENU' && mode !== 'GROUP_MGMT_MENU' && mode !== 'ADD_MEMBER_SELECTION', 
     handleButtonPress,
     currentIndex: currentDisplayIndex,
