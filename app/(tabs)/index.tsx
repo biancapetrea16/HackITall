@@ -2,7 +2,7 @@ import { useFonts, VT323_400Regular } from '@expo-google-fonts/vt323';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 
 import { usePagerLogic } from '../../hooks/usePagerLogic';
 
@@ -47,7 +47,7 @@ const THEMES = {
   },
   LIGHT: { 
     body: '#FFFFFF', bodyBorder: '#000000', bezel: '#DDDDDD', screen: '#F0F0F0', 
-    textGhost: 'rgba(0,0,0,0.05)', textReal: '#000000', 
+    textGhost: 'rgba(0,0,0,0.3)', textReal: '#000000', // Am crescut opacitatea la 0.3
     button: '#FFFFFF', buttonBorder: '#000', buttonAction: '#000', 
     arrows: '#FFFFFF', branding: '#000000',
     bgColors: ['#E0E0E0', '#FFFFFF'], neonColor: '#000000', titleColor: '#555555'
@@ -66,10 +66,12 @@ export default function RetroPagerUI() {
     notificationData,
     groupMgmtOptions, groupMgmtIndex,
     contactsForSelection, addMemberIndex,
-    // 1. IMPORT AICI:
-    currentGroupMembers, groupMemberViewIndex
+    currentGroupMembers, groupMemberViewIndex,
+    isLogged, loginUser,
+    visibleGroupOptions
   } = usePagerLogic();
 
+  const [inputPhone, setInputPhone] = useState('');
   const flickerOpacity = useNeonFlicker();
   const [blink, setBlink] = useState(true);
   
@@ -80,6 +82,7 @@ export default function RetroPagerUI() {
 
   if (!fontsLoaded) return <View style={styles.loading}><Text>Loading...</Text></View>;
 
+  // --- ECRAN INTRO ---
   if (!currentTheme) {
       return (
           <View style={styles.mainContainer}>
@@ -90,17 +93,12 @@ export default function RetroPagerUI() {
                     <View key={i} style={[styles.neonLine, { top: i * 70 + 20, backgroundColor: 'rgba(189, 0, 255, 0.4)', shadowColor: '#bd00ff' }]} />
                 ))}
               </View>
-
               <View style={styles.introContent}>
-                  <Text style={[styles.introTitle, { opacity: blink ? 1 : 0.8, textShadowColor: '#bd00ff' }]}>
-                      NEOPAGER_OS
-                  </Text>
-                  <Text style={[styles.introSubtitle, {color: '#E0B0FF'}]}>
-                      SELECT INTERFACE PROTOCOL:_
-                  </Text>
-
+                  <Text style={[styles.introTitle, { opacity: blink ? 1 : 0.8, textShadowColor: '#bd00ff' }]}>NEOPAGER_OS</Text>
+                  <Text style={[styles.introSubtitle, {color: '#E0B0FF'}]}>SELECT INTERFACE PROTOCOL:_</Text>
+                  
                   <View style={styles.introButtonList}>
-                      <TouchableOpacity onPress={() => setCurrentTheme('CLASSIC')} style={[styles.terminalBtn, {borderColor: '#39ff14'}]}>
+                       <TouchableOpacity onPress={() => setCurrentTheme('CLASSIC')} style={[styles.terminalBtn, {borderColor: '#39ff14'}]}>
                           <Text style={[styles.terminalBtnText, {color: '#39ff14'}]}>[1] CLASSIC</Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => setCurrentTheme('DARK')} style={[styles.terminalBtn, {borderColor: '#00FFFF'}]}>
@@ -119,11 +117,7 @@ export default function RetroPagerUI() {
   }
   
   const theme = THEMES[currentTheme]; 
-  
-  if (!theme) {
-      setCurrentTheme(null);
-      return <View style={styles.loading}><Text style={{color: 'red'}}>ERROR: Resetting Theme...</Text></View>;
-  }
+  if (!theme) { setCurrentTheme(null); return <View style={styles.loading}><Text>ERROR: Resetting Theme...</Text></View>; }
 
   const isTransmitting = displayText === 'SENDING...';
   const isMenuMode = mode === 'MENU';
@@ -131,14 +125,65 @@ export default function RetroPagerUI() {
   const isHistoryMode = mode === 'SENT_HISTORY_VIEW';
   const isGroupMgmtMode = mode === 'GROUP_MGMT_MENU';
   const isAddMemberMode = mode === 'ADD_MEMBER_SELECTION';
-  // 2. MODIFICARE AICI: Definim noul mod vizual
   const isGroupMembersViewMode = mode === 'GROUP_MEMBERS_VIEW';
-
   const isTypingMode = mode === 'GROUP_TYPING' || mode === 'AI_PROMPT';
   const isSelectionMode = mode === 'CONTACTS' || mode === 'GROUPS';
   const isFeedbackMode = totalMessages === -1; 
 
-  // LOGICĂ AFIȘARE MENIU/LISTĂ
+  // --- ECRAN LOGIN (FIX IOS) ---
+  if (!isLogged) {
+      return (
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <KeyboardAvoidingView 
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+                style={styles.mainContainer}
+            >
+                <LinearGradient colors={theme.bgColors} style={StyleSheet.absoluteFill} />
+                
+                <Text style={[styles.bgMainTitle, { color: theme.titleColor, textShadowColor: theme.neonColor, opacity: flickerOpacity, top: '5%' }]}>LOGIN</Text>
+                
+                <View style={[styles.pagerBody, { 
+                    backgroundColor: theme.body, 
+                    borderColor: theme.bodyBorder, 
+                    borderWidth: currentTheme === 'LIGHT' ? 4 : 2, 
+                    shadowColor: theme.neonColor, 
+                    height: height * 0.45, 
+                    justifyContent: 'center' 
+                }]}> 
+                    <View style={[styles.screenBezel, { backgroundColor: theme.bezel, borderWidth: currentTheme === 'LIGHT' ? 2 : 0, borderColor: '#000' }]}>
+                        <View style={[styles.lcdScreen, { backgroundColor: theme.screen, justifyContent: 'center', alignItems: 'center', height: 100, borderColor: theme.branding }]}>
+                            <Text style={[styles.pixelText, {color: theme.textReal, fontSize: 20, marginBottom: 10}]}>ENTER YOUR NUMBER:</Text>
+                            <TextInput 
+                                style={[styles.inputField, { borderColor: theme.textReal, color: theme.textReal, width: '90%', fontSize: 28, position: 'relative', top: 0, backgroundColor: theme.screen }]}
+                                value={inputPhone}
+                                onChangeText={setInputPhone}
+                                keyboardType="phone-pad"
+                                returnKeyType="done"
+                                placeholder="07xxxxxxxx"
+                                placeholderTextColor={theme.textGhost}
+                                autoFocus
+                                keyboardAppearance={currentTheme === 'DARK' ? 'dark' : 'light'}
+                            />
+                        </View>
+                    </View>
+                    
+                    <TouchableOpacity 
+                        style={[styles.bigButton, {backgroundColor: theme.buttonAction, alignSelf: 'center', width: 120, height: 50, marginTop: 30, borderWidth: 2, borderColor: theme.buttonBorder}]} 
+                        onPress={() => {
+                            Keyboard.dismiss();
+                            loginUser(inputPhone);
+                        }}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={[styles.btnLabel, {color: '#FFF', fontSize: 16, marginTop: 0}]}>CONNECT</Text>
+                    </TouchableOpacity>
+                </View>
+            </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      )
+  }
+
+  // --- ECRAN PAGER NORMAL ---
   let currentList = [];
   let currentSelectionIndex = 0;
   let headerText = '';
@@ -163,16 +208,15 @@ export default function RetroPagerUI() {
       currentList = contactsForSelection || [];
       currentSelectionIndex = addMemberIndex;
       headerText = 'ADD MEMBER';
-  } 
-  // 3. MODIFICARE AICI: Logică pentru lista de membri
-  else if (isGroupMembersViewMode) {
+  } else if (isGroupMembersViewMode) {
       currentList = currentGroupMembers || [];
       currentSelectionIndex = groupMemberViewIndex;
       headerText = 'MEMBERS LIST';
   }
-
-
-  // LOGICĂ INPUT
+  // 🔥 Header special pentru Group Mgmt
+  if (isGroupMgmtMode) {
+      headerText = 'GROUP MGMT';
+  }
   const currentInput = mode === 'GROUP_TYPING' ? newGroupName : aiPrompt;
   const setInputFunction = mode === 'GROUP_TYPING' ? setNewGroupName : setAiPrompt;
   const maxInputLength = mode === 'GROUP_TYPING' ? MAX_GROUP_LENGTH : MAX_AI_PROMPT_LENGTH;
@@ -180,27 +224,21 @@ export default function RetroPagerUI() {
   return (
     <View style={styles.mainContainer}>
       <StatusBar hidden={true} style="light" />
-
-      {/* FUNDAL */}
       <LinearGradient colors={theme.bgColors} style={StyleSheet.absoluteFill} />
-      
       <View style={[styles.bgFlickerLines, { opacity: flickerOpacity }]} pointerEvents="none">
-        {[...Array(12)].map((_, i) => (
-            <View key={i} style={[styles.neonLine, { top: i * 70 + 20, backgroundColor: theme.neonColor, opacity: 0.2, shadowColor: theme.neonColor }]} />
-        ))}
+        {[...Array(12)].map((_, i) => (<View key={i} style={[styles.neonLine, { top: i * 70 + 20, backgroundColor: theme.neonColor, opacity: 0.2, shadowColor: theme.neonColor }]} />))}
       </View>
 
-      <Text style={[styles.bgMainTitle, { color: theme.titleColor, textShadowColor: theme.neonColor, opacity: flickerOpacity }]}>
-          NEOPAGER
-      </Text>
+      <Text style={[styles.bgMainTitle, { color: theme.titleColor, textShadowColor: theme.neonColor, opacity: flickerOpacity }]}>NEOPAGER</Text>
 
       <TouchableOpacity onPress={() => setCurrentTheme(null)} style={styles.backBtn}>
           <Text style={{color: theme.branding, fontSize: 10, fontWeight:'bold', backgroundColor: currentTheme==='LIGHT'?'#fff':'transparent'}}> REBOOT SYSTEM </Text>
       </TouchableOpacity>
 
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{alignItems: 'center', justifyContent: 'center'}}>
       <View style={[styles.pagerBody, { 
-          backgroundColor: theme.body, borderColor: theme.bodyBorder, shadowOpacity: currentTheme === 'LIGHT' ? 0.2 : 0.6,
-          borderWidth: currentTheme === 'LIGHT' ? 4 : 2, shadowColor: theme.neonColor
+          backgroundColor: theme.body, borderColor: theme.bodyBorder, shadowOpacity: currentTheme === 'LIGHT' ? 0.2 : 0.6, 
+          borderWidth: currentTheme === 'LIGHT' ? 4 : 2, shadowColor: theme.neonColor 
       }]}>
         
         {notificationData && (
@@ -251,32 +289,41 @@ export default function RetroPagerUI() {
                                 {maxInputLength - currentInput.length} chars left
                             </Text>
                         </View>
-                        
-                      // 4. MODIFICARE AICI: Am adăugat `|| isGroupMembersViewMode` pentru a folosi randarea de listă
-                      ) : isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? (
-                          
+                      ) : isGroupMgmtMode ? (
                           <View style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', height: '100%', paddingLeft: 10, paddingTop: 5}}>
-                              {currentList.slice(
-                                  Math.max(0, currentSelectionIndex - 2), 
-                                  Math.max(0, currentSelectionIndex - 2) + 5
-                              ).map((item, idx) => {
+                              {/* Randează direct visibleGroupOptions fără slice generic */}
+                              {visibleGroupOptions.map((item) => (
+                                  <Text key={item.label} style={{ 
+                                      fontFamily: 'VT323_400Regular', 
+                                      fontSize: 22, 
+                                      lineHeight: 24, 
+                                      position: 'relative', 
+                                      // Comparăm cu originalIndex pentru highlight corect
+                                      color: groupMgmtIndex === item.originalIndex ? theme.textReal : theme.branding,
+                                      opacity: groupMgmtIndex === item.originalIndex ? 1 : 0.5,
+                                      textShadowColor: groupMgmtIndex === item.originalIndex ? theme.textReal : 'transparent', textShadowRadius: 5
+                                  }}>
+                                      {groupMgmtIndex === item.originalIndex ? "> " : "  "}{item.label}
+                                  </Text>
+                              ))}
+                          </View>
+
+                      /* CAZ 3: MENIURI GENERICE (ISTORIC, CONTACTE ETC) */
+                      ) : isMenuMode || isMessageMenuMode || isHistoryMode || isAddMemberMode || isGroupMembersViewMode ? (
+              
+                          <View style={{flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', height: '100%', paddingLeft: 10, paddingTop: 5}}>
+                              {currentList.slice(Math.max(0, currentSelectionIndex - 2), Math.max(0, currentSelectionIndex - 2) + 5).map((item, idx) => {
                                   const realIndex = Math.max(0, currentSelectionIndex - 2) + idx;
                                   return (
-                                    <Text key={realIndex} style={{ 
-                                        fontFamily: 'VT323_400Regular', 
-                                        fontSize: isHistoryMode ? 18 : 22, 
-                                        lineHeight: isHistoryMode ? 20 : 24, 
-                                        position: 'relative', 
-                                        color: realIndex === currentSelectionIndex ? theme.textReal : theme.branding,
-                                        opacity: realIndex === currentSelectionIndex ? 1 : 0.5,
-                                        textShadowColor: realIndex === currentSelectionIndex ? theme.textReal : 'transparent', textShadowRadius: 5
-                                    }}>
+                                    <Text key={realIndex} style={{ fontFamily: 'VT323_400Regular', fontSize: isHistoryMode ? 18 : 22, lineHeight: isHistoryMode ? 20 : 24, position: 'relative', 
+                                    color: realIndex === currentSelectionIndex ? theme.textReal : theme.branding, 
+                                    opacity: realIndex === currentSelectionIndex ? 1 : 0.5, 
+                                    textShadowColor: realIndex === currentSelectionIndex ? theme.textReal : 'transparent', textShadowRadius: 5 }}>
                                         {realIndex === currentSelectionIndex ? "> " : "  "}{item}
                                     </Text>
                                   );
                               })}
                           </View>
-
                       ) : (
                           <>
                             <Text style={[styles.pixelText, { color: theme.textGhost }]}>88888888888888</Text>
@@ -290,12 +337,8 @@ export default function RetroPagerUI() {
                     </View>
 
                     <View style={[styles.lcdIcons, { borderTopColor: theme.branding }]}>
-                      <Text style={[styles.iconText, { color: theme.textReal, opacity: 0.7 }]}>
-                        {headerText || (isSelectionMode ? 'SELECT CONTACT' : `Msg ${currentIndex + 1}/${totalMessages}`)}
-                      </Text>
-                      <Text style={[styles.iconText, { color: isTransmitting ? 'red' : theme.textReal, opacity: 0.7 }]}>
-                        {isTransmitting ? 'TX >>>' : 'BAT OK'}
-                      </Text>
+                      <Text style={[styles.iconText, { color: theme.textReal, opacity: 0.7 }]}>{headerText || (isSelectionMode ? 'SELECT CONTACT' : `Msg ${currentIndex + 1}/${totalMessages}`)}</Text>
+                      <Text style={[styles.iconText, { color: isTransmitting ? 'red' : theme.textReal, opacity: 0.7 }]}>{isTransmitting ? 'TX >>>' : 'BAT OK'}</Text>
                     </View>
                 </View>
             </View>
@@ -303,49 +346,35 @@ export default function RetroPagerUI() {
 
         <View style={styles.middleDeco}>
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
-            <Text style={[styles.instructionText, { color: theme.branding }]}>
-               {isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'NAVIGATE' : isTypingMode ? 'PRESS OK TO SAVE' : isFeedbackMode ? 'SENT' : '1-WAY PAGING'}
-            </Text>
+            <Text style={[styles.instructionText, { color: theme.branding }]}>{isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'NAVIGATE' : isTypingMode ? 'PRESS OK TO SAVE' : isFeedbackMode ? 'SENT' : '1-WAY PAGING'}</Text>
             <View style={[styles.decoLines, { backgroundColor: theme.branding }]} />
         </View>
 
         <View style={styles.controlsArea}>
-          
-          <TouchableOpacity 
-            style={[styles.bigButton, {backgroundColor: theme.button, borderColor: theme.buttonBorder}]} 
-            onPress={() => handleButtonPress('BTN_MENU')} 
-            activeOpacity={0.6}>
+          <TouchableOpacity style={[styles.bigButton, {backgroundColor: theme.button, borderColor: theme.buttonBorder}]} onPress={() => handleButtonPress('BTN_MENU')} activeOpacity={0.6}>
             <View style={styles.buttonInset} />
             <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT'?'#000':'#FFF'}]}>{isMenuMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'BACK' : 'MENU'}</Text>
           </TouchableOpacity>
-          
           <View style={styles.arrowsContainer}>
             <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows, borderColor: theme.buttonBorder}]} onPress={() => handleButtonPress('UP')} disabled={isTypingMode}>
                 <Text style={[styles.arrowText, {color: currentTheme==='LIGHT'?'#000':theme.textReal, opacity: isTypingMode ? 0.2 : 0.8}]}>▲</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity style={[styles.arrowBtn, {backgroundColor: theme.arrows, borderColor: theme.buttonBorder}]} onPress={() => handleButtonPress('DOWN')} disabled={isTypingMode}>
                 <Text style={[styles.arrowText, {color: currentTheme==='LIGHT'?'#000':theme.textReal, opacity: isTypingMode ? 0.2 : 0.8}]}>▼</Text>
             </TouchableOpacity>
           </View>
-          
-          <TouchableOpacity 
-            style={[styles.bigButton, { backgroundColor: (isMenuMode || isSelectionMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode) ? theme.buttonAction : theme.button, borderColor: theme.buttonBorder }]} 
-            onPress={() => handleButtonPress('SEND')} 
-            activeOpacity={0.6}>
+          <TouchableOpacity style={[styles.bigButton, { backgroundColor: (isMenuMode || isSelectionMode || isTypingMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode) ? theme.buttonAction : theme.button, borderColor: theme.buttonBorder }]} onPress={() => handleButtonPress('SEND')} activeOpacity={0.6}>
             <View style={styles.buttonInset} />
-            <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT' && !isMenuMode && !isSelectionMode ? '#000' : '#FFF'}]}>
-                {isTypingMode || isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'SELECT' : isSelectionMode ? 'OK' : 'SEND'}
-            </Text>
+            <Text style={[styles.btnLabel, {color: currentTheme==='LIGHT' && !isMenuMode && !isSelectionMode ? '#000' : '#FFF'}]}>{isTypingMode || isMenuMode || isMessageMenuMode || isHistoryMode || isGroupMgmtMode || isAddMemberMode || isGroupMembersViewMode ? 'SELECT' : isSelectionMode ? 'OK' : 'SEND'}</Text>
           </TouchableOpacity>
         </View>
-        
         <View style={styles.speakerGrill}>
             <View style={[styles.grillLine, {backgroundColor: theme.branding}]} />
             <View style={[styles.grillLine, {backgroundColor: theme.branding}]} />
             <View style={[styles.grillLine, {backgroundColor: theme.branding}]} />
         </View>
       </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

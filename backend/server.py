@@ -3,6 +3,7 @@ from flask_cors import CORS
 from datetime import datetime
 import random
 from collections import deque 
+import random 
 
 app = Flask(__name__)
 CORS(app)
@@ -258,6 +259,20 @@ def reset_db():
     print("🗑️ Database and Game States cleared.")
     return jsonify({"message": "Database and Game States cleared"}), 200
 
+
+@app.route('/game/mission', methods=['POST'])
+def generate_mission():
+    data = request.json
+    target_name = data.get('contact_name', 'TARGET')
+    
+    missions = [
+        f"AGENT! Group {target_name} is compromised. Send a code meaning 'DANGER' but disguise it as 'LOVE'.",
+        f"HQ here. {target_name} needs extraction. Use AI to generate a code for 'HELICOPTER'.",
+        f"Mole detected in {target_name}. Send '187' (Hate) to warn the loyalists.",
+        f"Operation Shadow: Convince {target_name} to meet you using only numeric codes."
+    ]
+    
+    return jsonify({"mission": random.choice(missions)})
 if __name__ == '__main__':
     print("🎮 Server Cameleonul Secret pornit pe portul 5002...")
     messages_queue['TEST'] = [{"text": "SERVER UP!", "sender": "SYSTEM"}]
